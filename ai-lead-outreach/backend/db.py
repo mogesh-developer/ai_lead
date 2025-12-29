@@ -113,10 +113,62 @@ def init_db():
         )
         """)
 
+        # Email Templates Table (Global)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS email_templates (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            subject VARCHAR(255),
+            body TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+
+        # Email Templates Table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS email_templates (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            subject VARCHAR(255),
+            body TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+
         conn.commit()
         cursor.close()
         conn.close()
         print("Database initialized successfully.")
+
+def add_template(name, subject, body):
+    conn = get_db_connection()
+    if conn:
+        cursor = conn.cursor()
+        sql = "INSERT INTO email_templates (name, subject, body) VALUES (%s, %s, %s)"
+        cursor.execute(sql, (name, subject, body))
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+def get_templates():
+    conn = get_db_connection()
+    templates = []
+    if conn:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM email_templates ORDER BY created_at DESC")
+        templates = cursor.fetchall()
+        cursor.close()
+        conn.close()
+    return templates
+
+def delete_template(template_id):
+    conn = get_db_connection()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM email_templates WHERE id = %s", (template_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
 
 def add_campaign_sequence(campaign_id, day_offset, subject, body):
     conn = get_db_connection()
@@ -307,3 +359,44 @@ def get_dashboard_stats():
         cursor.close()
         conn.close()
     return stats
+
+def add_template(name, subject, body):
+    conn = get_db_connection()
+    if conn:
+        cursor = conn.cursor()
+        sql = "INSERT INTO email_templates (name, subject, body) VALUES (%s, %s, %s)"
+        cursor.execute(sql, (name, subject, body))
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+def get_templates():
+    conn = get_db_connection()
+    templates = []
+    if conn:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM email_templates ORDER BY created_at DESC")
+        templates = cursor.fetchall()
+        cursor.close()
+        conn.close()
+    return templates
+
+def get_template_by_id(template_id):
+    conn = get_db_connection()
+    template = None
+    if conn:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM email_templates WHERE id = %s", (template_id,))
+        template = cursor.fetchone()
+        cursor.close()
+        conn.close()
+    return template
+
+def delete_template(template_id):
+    conn = get_db_connection()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM email_templates WHERE id = %s", (template_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()

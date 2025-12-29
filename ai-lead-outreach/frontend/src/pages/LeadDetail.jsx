@@ -11,10 +11,26 @@ const LeadDetail = () => {
   const [outreachResult, setOutreachResult] = useState(null);
   const [notes, setNotes] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
+  
+  // Outreach Mode State
+  const [outreachMode, setOutreachMode] = useState('ai'); // 'ai', 'template', 'manual'
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplate, setSelectedTemplate] = useState('');
+  const [manualMessage, setManualMessage] = useState('');
 
   useEffect(() => {
     fetchLead();
+    fetchTemplates();
   }, [id]);
+
+  const fetchTemplates = async () => {
+    try {
+      const res = await api.get('/templates');
+      setTemplates(res.data);
+    } catch (err) {
+      console.error("Failed to load templates", err);
+    }
+  };
 
   const fetchLead = async () => {
     try {
@@ -41,13 +57,29 @@ const LeadDetail = () => {
   };
 
   const handleOutreach = async () => {
+    if (outreachMode === 'template' && !selectedTemplate) {
+        alert("Please select a template");
+        return;
+    }
+    if (outreachMode === 'manual' && !manualMessage) {
+        alert("Please enter a message");
+        return;
+    }
+
     setSending(true);
     try {
-      const response = await api.post(`/outreach/${id}`);
+      const payload = {
+        outreach_type: outreachMode,
+        template_id: outreachMode === 'template' ? selectedTemplate : null,
+        manual_body: outreachMode === 'manual' ? manualMessage : null
+      };
+      
+      const response = await api.post(`/outreach/${id}`, payload);
       setOutreachResult(response.data);
       fetchLead();
     } catch (error) {
       console.error("Outreach failed", error);
+      alert("Outreach failed: " + (error.response?.data?.error || error.message));
     } finally {
       setSending(false);
     }
@@ -148,17 +180,54 @@ const LeadDetail = () => {
         {/* Outreach Section */}
         <div className="bg-white shadow rounded-lg p-6">
           <h2 className="text-xl font-bold mb-4">Outreach Actions</h2>
-          {lead.status === 'analyzed' || lead.status === 'outreach_sent' ? (
+          {lead.status === 'analyzed' || lead.status === 'outreach_sent' || lead.status === 'new' ? (
             <div>
-              <p className="mb-4 text-gray-600">
-                AI recommends: <strong>{lead.trust_score > 60 ? 'OUTREACH' : 'SKIP'}</strong>
-              </p>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Outreach Method</label>
+                <div className="flex space-x-4 mb-4">
+                    <label className="inline-flex items-center">
+                        <input type="radio" className="form-radio" name="mode" value="ai" checked={outreachMode === 'ai'} onChange={(e) => setOutreachMode(e.target.value)} />
+                        <span className="ml-2">AI Generation</span>
+                    </label>
+                    <label className="inline-flex items-center">
+                        <input type="radio" className="form-radio" name="mode" value="template" checked={outreachMode === 'template'} onChange={(e) => setOutreachMode(e.target.value)} />
+                        <span className="ml-2">Use Template</span>
+                    </label>
+                    <label className="inline-flex items-center">
+                        <input type="radio" className="form-radio" name="mode" value="manual" checked={outreachMode === 'manual'} onChange={(e) => setOutreachMode(e.target.value)} />
+                        <span className="ml-2">Manual</span>
+                    </label>
+                </div>
+
+                {outreachMode === 'template' && (
+                    <select 
+                        className="w-full p-2 border rounded mb-4"
+                        value={selectedTemplate}
+                        onChange={(e) => setSelectedTemplate(e.target.value)}
+                    >
+                        <option value="">-- Select a Template --</option>
+                        {templates.map(t => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                    </select>
+                )}
+
+                {outreachMode === 'manual' && (
+                    <textarea
+                        className="w-full p-2 border rounded mb-4 h-32"
+                        placeholder="Type your email content here..."
+                        value={manualMessage}
+                        onChange={(e) => setManualMessage(e.target.value)}
+                    />
+                )}
+              </div>
+
               <button 
                 onClick={handleOutreach}
                 disabled={sending}
                 className="w-full bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:bg-gray-400"
               >
-                {sending ? 'Generating & Sending...' : 'Generate & Send Thanglish Message'}
+                {sending ? 'Sending...' : 'Send Outreach'}
               </button>
               
               {outreachResult && (

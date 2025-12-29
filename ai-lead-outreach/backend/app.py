@@ -20,7 +20,7 @@ from serpapi import Client
 import db
 import random
 import time
-
+from justdial_scraper import JustDialScraper
 
 # Load environment variables
 load_dotenv()
@@ -52,7 +52,7 @@ def optimize_lead_data_with_ai(lead_data):
         return lead_data
         
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-1.5-pro')
         prompt = f"""
         Analyze and improve this lead data. 
         Input: {json.dumps(lead_data)}
@@ -708,6 +708,17 @@ def agent_discovery(industry, location):
             if any(x in link.lower() for x in ['linkedin.com', 'facebook.com', 'twitter.com', 'instagram.com']):
                 print("Skipping social media link.")
                 continue
+            
+            # Skip aggregators and listicles if user wants "official pages"
+            # Common patterns for listicles: "top-10", "best-20", "clutch.co", "yelp.com", "justdial.com", "sulekha.com"
+            # But wait, user might WANT justdial if they are scraping it specifically. 
+            # However, for "Web Search" (Smart Lead Finder), we usually want direct company sites.
+            # The user specifically asked to avoid "Top 20" etc.
+            
+            skip_keywords = ['top-', 'best-', 'list-of', 'directory', 'clutch.co', 'yelp.com', 'sulekha.com', 'justdial.com', 'yellowpages', 'thumbtack', 'upwork', 'fiverr']
+            if any(k in link.lower() for k in skip_keywords) or any(k in title.lower() for k in ['top ', 'best ', 'list of ']):
+                print(f"Skipping aggregator/listicle: {link}")
+                continue
 
             print(f"Scraping {link}...")
             emails, phones, addresses, names = extract_contact_info(link)
@@ -871,7 +882,7 @@ def agent_analyze_business(lead):
 
     try:
         print(f"🤖 Analyzing business with Gemini: {lead.get('company')}")
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-1.5-pro')
         
         prompt = f"""
         Analyze this business lead for a B2B service provider (Digital Marketing/Tech Services).
@@ -960,7 +971,7 @@ def agent_generate_message(lead, strategy="polite"):
 
     try:
         print(f"🤖 Generating message with Gemini for {company} ({strategy})")
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-1.5-pro')
         
         prompt = f"""
         Write a cold outreach email for a digital marketing agency.
@@ -1136,7 +1147,7 @@ def agent_analyze_response(response_text, lead):
 
     try:
         print(f"🤖 Analyzing response with Gemini...")
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-1.5-pro')
         
         prompt = f"""
         Analyze this email response from a lead.
@@ -1183,7 +1194,131 @@ def agent_followup_logic(lead, response_analysis, follow_up_count):
     else:
         return False
 
+def agent_targeted_search(location, niche, offering):
+    """Agent 1.7: Targeted Lead Finder (Smart Search)"""
+    print(f"🎯 Targeted Search: {niche} in {location} for {offering}")
+    
+    # Negative keywords to exclude aggregators and listicles
+    negatives = '-site:justdial.com -site:sulekha.com -site:indiamart.com -site:tripadvisor.com -site:yelp.com -"top 10" -"top 20" -"best 10" -"list of"'
+    
+    queries = []
+    if offering == "Landing Page":
+        # Strategy: Find businesses that rely on social media or free emails (likely no website)
+        queries = [
+            f'site:facebook.com "{niche}" "{location}" "phone" "gmail.com"',
+            f'site:instagram.com "{niche}" "{location}" "contact" "gmail.com"',
+            f'"{niche}" "{location}" "@gmail.com" {negatives}', 
+            f'"{niche}" "{location}" "contact number" {negatives}'
+        ]
+    elif offering == "Billing Software":
+        # Strategy: Find retail/wholesale businesses that have high transaction volume
+        queries = [
+            f'"{niche}" "{location}" "store" contact email {negatives}',
+            f'"{niche}" "{location}" "distributors" contact {negatives}',
+            f'"{niche}" shop "{location}" phone number {negatives}',
+            f'"{niche}" wholesalers "{location}" contact {negatives}'
+        ]
+    else:
+        # General search
+        queries = [f'"{niche}" in "{location}" contact details email phone {negatives}']
+
+    found_leads = []
+    seen_urls = set()
+
+    # Keywords that indicate a listicle or directory in the title
+    listicle_indicators = ['top 10', 'top 20', 'top 50', 'best ', 'list of', 'directory', 'yellow pages', 'listings', 'providers in']
+
+    for query in queries:
+        print(f"   Running query: {query}")
+        try:
+            results = search_the_web(query, max_results=15)
+            
+            for r in results:
+                link = r.get('href', '')
+                title = r.get('title', '').lower()
+                snippet = r.get('body', '').lower()
+
+                if link in seen_urls:
+                    continue
+                
+                # Filter out listicles/directories based on title
+                if any(indicator in title for indicator in listicle_indicators):
+                    print(f"      Skipping listicle/directory: {title}")
+                    continue
+
+                seen_urls.add(link)
+                
+                # Extract emails from snippet
+                emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', snippet)
+                # Extract phones (simple pattern for Indian numbers often found in snippets)
+                phones = re.findall(r'(?:\+91[\-\s]?)?[6789]\d{9}', snippet)
+                
+                email = emails[0] if emails else ''
+                phone = phones[0] if phones else ''
+                
+                # Clean up company name
+                company_name = r.get('title', '').split('-')[0].split('|')[0].split(':')[0].strip()
+                if "profile" in company_name.lower() or "login" in company_name.lower():
+                    continue
+
+                # If we found at least one contact method
+                if email or phone:
+                    lead = {
+                        'name': f"Owner/Manager",
+                        'email': email,
+                        'phone': phone,
+                        'company': company_name,
+                        'location': location,
+                        'source': f'targeted_{offering.lower().replace(" ", "_")}',
+                        'status': 'new',
+                        'trust_score': 60
+                    }
+                    
+                    # Deduplicate by email or phone locally before adding
+                    if not any(l['email'] == email for l in found_leads if email) and \
+                       not any(l['phone'] == phone for l in found_leads if phone):
+                        
+                        # AI Optimization (Optional, can be slow)
+                        # lead = optimize_lead_data_with_ai(lead)
+                        
+                        found_leads.append(lead)
+                        print(f"      Found lead: {company_name} ({email or phone})")
+        except Exception as e:
+            print(f"    Query failed: {e}")
+            continue
+
+    return found_leads
+
 # --- API ENDPOINTS ---
+
+@app.route('/api/targeted-search', methods=['POST'])
+def targeted_search():
+    data = request.json
+    location = data.get('location', 'Tamil Nadu')
+    niche = data.get('niche', 'Small Business')
+    offering = data.get('offering', 'General')
+    
+    if not location or not niche:
+        return jsonify({"error": "Missing location or niche"}), 400
+        
+    leads = agent_targeted_search(location, niche, offering)
+    
+    # Save to DB
+    saved_count = 0
+    for lead in leads:
+        # Check if exists
+        existing = None
+        if lead['email']:
+            existing = db.get_lead_by_email(lead['email'])
+        
+        if not existing:
+            db.insert_lead(lead)
+            saved_count += 1
+            
+    return jsonify({
+        "message": f"Search complete. Found {len(leads)} leads, {saved_count} new added.", 
+        "leads": leads
+    })
 
 def agent_keyword_search(keywords):
     """Agent 1.6: Lead Discovery Agent (Keyword Search)"""
@@ -1257,8 +1392,36 @@ def web_search():
         return jsonify({"error": "Missing query"}), 400
         
     try:
-        results = search_the_web(query, max_results=10)
-        return jsonify({"results": results})
+        results = search_the_web(query, max_results=20) # Fetch more to allow for filtering
+        
+        filtered_results = []
+        # Keywords to skip (directories, listicles, aggregators)
+        skip_keywords = [
+            'top-', 'best-', 'list-of', 'directory', 'clutch.co', 'yelp.com', 
+            'sulekha.com', 'justdial.com', 'yellowpages', 'thumbtack', 'upwork', 
+            'fiverr', 'linkedin.com', 'facebook.com', 'instagram.com', 'glassdoor',
+            'goodfirms', 'designrush', 'sortlist', 'themanifest'
+        ]
+        
+        skip_titles = ['top 10', 'top 20', 'top 30', 'top 50', 'top 100', 'best ', 'list of ', 'directory', 'reviews']
+
+        for r in results:
+            link = r.get('href', '')
+            title = r.get('title', '').lower()
+            
+            if not link: continue
+            
+            # Check URL patterns
+            if any(k in link.lower() for k in skip_keywords):
+                continue
+                
+            # Check Title patterns
+            if any(k in title for k in skip_titles):
+                continue
+                
+            filtered_results.append(r)
+            
+        return jsonify({"results": filtered_results[:10]}) # Return top 10 filtered
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1377,6 +1540,78 @@ def export_leads():
         )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route('/api/templates', methods=['GET', 'POST'])
+def handle_templates():
+    if request.method == 'POST':
+        data = request.json
+        name = data.get('name')
+        subject = data.get('subject')
+        body = data.get('body')
+        
+        if not name or not subject or not body:
+            return jsonify({"error": "Name, subject, and body are required"}), 400
+            
+        db.add_template(name, subject, body)
+        return jsonify({"message": "Template created"})
+    else:
+        templates = db.get_templates()
+        return jsonify(templates)
+
+@app.route('/api/templates/<int:id>', methods=['DELETE'])
+def delete_template(id):
+    db.delete_template(id)
+    return jsonify({"message": "Template deleted"})
+
+@app.route('/api/bulk-scrape-simple', methods=['POST'])
+def bulk_scrape_simple():
+    """Non-AI Bulk Scraper"""
+    data = request.json
+    urls = data.get('urls', [])
+    
+    if not urls:
+        return jsonify({"error": "No URLs provided"}), 400
+        
+    results = []
+    
+    for url in urls:
+        if not url.startswith('http'):
+            url = 'https://' + url
+            
+        try:
+            print(f"Scraping {url}...")
+            # Use requests for speed (no JS rendering)
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+            response = requests.get(url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                text = response.text
+                
+                # Regex extraction
+                emails = list(set(re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text)))
+                phones = list(set(re.findall(r'(?:\+91[\-\s]?)?[6789]\d{9}', text)))
+                
+                # Basic title extraction
+                soup = BeautifulSoup(text, 'html.parser')
+                title = soup.title.string.strip() if soup.title else url
+                
+                if emails or phones:
+                    results.append({
+                        "url": url,
+                        "title": title,
+                        "emails": emails,
+                        "phones": phones,
+                        "status": "success"
+                    })
+                else:
+                    results.append({"url": url, "status": "no_contacts_found"})
+            else:
+                results.append({"url": url, "status": f"error_{response.status_code}"})
+                
+        except Exception as e:
+            results.append({"url": url, "status": f"failed: {str(e)}"})
+            
+    return jsonify({"results": results})
 
 @app.route('/api/campaigns', methods=['GET', 'POST'])
 def handle_campaigns():
@@ -1506,28 +1741,189 @@ def analyze_lead(id):
     
     return jsonify({"analysis": analysis, "decision": decision})
 
+@app.route('/api/templates', methods=['GET', 'POST'])
+def handle_templates():
+    if request.method == 'GET':
+        templates = db.get_templates()
+        return jsonify(templates)
+    elif request.method == 'POST':
+        data = request.json
+        db.add_template(data['name'], data['subject'], data['body'])
+        return jsonify({"message": "Template added"})
+
+@app.route('/api/templates/<int:id>', methods=['DELETE'])
+def delete_template(id):
+    db.delete_template(id)
+    return jsonify({"message": "Template deleted"})
+
+@app.route('/api/bulk-scrape-simple', methods=['POST'])
+def bulk_scrape_simple():
+    try:
+        data = request.get_json()
+        if not data:
+             return jsonify({"error": "Invalid JSON data"}), 400
+             
+        urls = data.get('urls', [])
+        keyword = data.get('keyword') # Optional keyword search mode
+        
+        results = []
+        
+        # Suppress SSL warnings
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        
+        # If keyword is provided, perform a search first to get URLs
+        if keyword and not urls:
+            print(f"Performing keyword search for: {keyword}")
+            search_results = search_the_web(keyword, max_results=20)
+            
+            # Filter out listicles/aggregators
+            skip_keywords = [
+                'top-', 'best-', 'list-of', 'directory', 'clutch.co', 'yelp.com', 
+                'sulekha.com', 'justdial.com', 'yellowpages', 'thumbtack', 'upwork', 
+                'fiverr', 'linkedin.com', 'facebook.com', 'instagram.com', 'glassdoor',
+                'goodfirms', 'designrush', 'sortlist', 'themanifest'
+            ]
+            skip_titles = ['top 10', 'top 20', 'top 30', 'top 50', 'top 100', 'best ', 'list of ', 'directory', 'reviews']
+            
+            for r in search_results:
+                link = r.get('href', '')
+                title = r.get('title', '').lower()
+                
+                if not link: continue
+                
+                # Skip aggregators
+                if any(k in link.lower() for k in skip_keywords):
+                    print(f"Skipping aggregator/listicle (URL): {link}")
+                    continue
+                    
+                if any(k in title for k in skip_titles):
+                    print(f"Skipping aggregator/listicle (Title): {title}")
+                    continue
+                    
+                urls.append(link)
+            
+            # Limit to top 10 to avoid long wait times
+            urls = urls[:10]
+            print(f"Found {len(urls)} official URLs to scrape.")
+
+        for url in urls:
+            if not url.startswith('http'):
+                url = 'https://' + url
+                
+            try:
+                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+                # verify=False to avoid SSL errors, timeout=15 for slower sites
+                response = requests.get(url, headers=headers, timeout=15, verify=False)
+                
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    # Use separator to avoid merging text from adjacent elements
+                    text = soup.get_text(separator=' ')
+                    
+                    # Extract Emails
+                    raw_emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text)
+                    # Filter valid emails
+                    emails = []
+                    for e in set(raw_emails):
+                        if not e.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.js', '.css')):
+                             emails.append(e)
+                    
+                    # Extract Phones (Improved Regex)
+                    # Matches: (123) 456-7890, 123-456-7890, +1 123 456 7890, 123.456.7890
+                    phone_pattern = r'(?:\+?\d{1,3}[ -.]?)?\(?\d{3}\)?[ -.]?\d{3}[ -.]?\d{4}'
+                    phones = list(set(re.findall(phone_pattern, text)))
+                    
+                    results.append({
+                        "url": url,
+                        "title": soup.title.string.strip() if soup.title else url,
+                        "emails": emails,
+                        "phones": phones,
+                        "status": "success"
+                    })
+                else:
+                    results.append({
+                        "url": url,
+                        "status": "failed",
+                        "error": f"Status code: {response.status_code}"
+                    })
+                    
+            except Exception as e:
+                print(f"Error scraping {url}: {e}")
+                results.append({
+                    "url": url,
+                    "status": "failed",
+                    "error": str(e)
+                })
+            
+        return jsonify({"results": results})
+    except Exception as e:
+        print(f"Bulk scrape error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/scrape-justdial', methods=['POST'])
+def scrape_justdial():
+    data = request.json
+    url = data.get('url')
+    
+    if not url:
+        return jsonify({"error": "URL is required"}), 400
+        
+    try:
+        scraper = JustDialScraper()
+        leads = scraper.scrape(url)
+        return jsonify({"message": "Scraping successful", "leads": leads})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/outreach/<int:id>', methods=['POST'])
 def outreach_lead(id):
     lead = db.get_lead_by_id(id)
     if not lead:
         return jsonify({"error": "Lead not found"}), 404
     
-    # Ensure analysis exists
-    if not lead['ai_analysis']:
-        analysis = agent_analyze_business(lead)
-        db.update_lead_analysis(id, json.dumps(analysis), analysis.get('trust_score', 0), 'analyzed')
-    else:
-        if isinstance(lead['ai_analysis'], str):
-             try:
-                 analysis = json.loads(lead['ai_analysis'])
-             except:
-                 analysis = {}
+    data = request.json or {}
+    outreach_type = data.get('outreach_type', 'ai') # 'ai', 'template', 'manual'
+    
+    message = ""
+    strategy = "Manual/Template"
+    
+    if outreach_type == 'template':
+        template_id = data.get('template_id')
+        if not template_id:
+             return jsonify({"error": "Template ID missing"}), 400
+        
+        template = db.get_template_by_id(template_id)
+        if not template:
+             return jsonify({"error": "Template not found"}), 404
+             
+        # Simple variable substitution
+        message = template['body']
+        message = message.replace('{{name}}', lead.get('name', ''))
+        message = message.replace('{{company}}', lead.get('company', ''))
+             
+    elif outreach_type == 'manual':
+        message = data.get('manual_body')
+        if not message:
+             return jsonify({"error": "Message body missing"}), 400
+
+    else: # AI
+        # Ensure analysis exists
+        if not lead['ai_analysis']:
+            analysis = agent_analyze_business(lead)
+            db.update_lead_analysis(id, json.dumps(analysis), analysis.get('trust_score', 0), 'analyzed')
         else:
-            analysis = lead['ai_analysis']
-            
-    # Generate content
-    strategy = agent_message_strategy(lead, analysis)
-    message = agent_generate_message(lead, strategy)
+            if isinstance(lead['ai_analysis'], str):
+                 try:
+                     analysis = json.loads(lead['ai_analysis'])
+                 except:
+                     analysis = {}
+            else:
+                analysis = lead['ai_analysis']
+                
+        # Generate content
+        strategy = agent_message_strategy(lead, analysis)
+        message = agent_generate_message(lead, strategy)
     
     # Send
     success = agent_send_outreach(lead, message)

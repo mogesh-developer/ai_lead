@@ -14,6 +14,9 @@ const Navbar = () => {
             <Link to="/search" className="text-gray-700 hover:text-blue-600">Find Leads</Link>
             <Link to="/upload" className="text-gray-700 hover:text-blue-600">Upload Leads</Link>
             <Link to="/web-search" className="text-gray-700 hover:text-blue-600">Web Search</Link>
+            <Link to="/bulk-scrape" className="text-gray-700 hover:text-blue-600">Bulk Scrape</Link>
+            <Link to="/justdial" className="text-gray-700 hover:text-blue-600">Justdial</Link>
+            <Link to="/templates" className="text-gray-700 hover:text-blue-600">Templates</Link>
             <Link to="/guide" className="text-gray-700 hover:text-blue-600 font-medium">Guide</Link>
           </div>
 

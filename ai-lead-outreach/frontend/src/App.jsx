@@ -10,6 +10,9 @@ import Guide from './pages/Guide';
 import WebSearch from './pages/WebSearch';
 import Analytics from './pages/Analytics';
 import Campaigns from './pages/Campaigns';
+import Templates from './pages/Templates';
+import BulkScrape from './pages/BulkScrape';
+import JustdialScraper from './pages/JustdialScraper';
 
 function App() {
   return (
@@ -24,6 +27,9 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/campaigns" element={<Campaigns />} />
             <Route path="/analytics" element={<Analytics />} />
+            <Route path="/templates" element={<Templates />} />
+            <Route path="/bulk-scrape" element={<BulkScrape />} />
+            <Route path="/justdial" element={<JustdialScraper />} />
             <Route path="/lead/:id" element={<LeadDetail />} />
             <Route path="/guide" element={<Guide />} />
             <Route path="/web-search" element={<WebSearch />} />
