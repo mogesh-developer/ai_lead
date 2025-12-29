@@ -1563,56 +1563,6 @@ def delete_template(id):
     db.delete_template(id)
     return jsonify({"message": "Template deleted"})
 
-@app.route('/api/bulk-scrape-simple', methods=['POST'])
-def bulk_scrape_simple():
-    """Non-AI Bulk Scraper"""
-    data = request.json
-    urls = data.get('urls', [])
-    
-    if not urls:
-        return jsonify({"error": "No URLs provided"}), 400
-        
-    results = []
-    
-    for url in urls:
-        if not url.startswith('http'):
-            url = 'https://' + url
-            
-        try:
-            print(f"Scraping {url}...")
-            # Use requests for speed (no JS rendering)
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-            response = requests.get(url, headers=headers, timeout=10)
-            
-            if response.status_code == 200:
-                text = response.text
-                
-                # Regex extraction
-                emails = list(set(re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text)))
-                phones = list(set(re.findall(r'(?:\+91[\-\s]?)?[6789]\d{9}', text)))
-                
-                # Basic title extraction
-                soup = BeautifulSoup(text, 'html.parser')
-                title = soup.title.string.strip() if soup.title else url
-                
-                if emails or phones:
-                    results.append({
-                        "url": url,
-                        "title": title,
-                        "emails": emails,
-                        "phones": phones,
-                        "status": "success"
-                    })
-                else:
-                    results.append({"url": url, "status": "no_contacts_found"})
-            else:
-                results.append({"url": url, "status": f"error_{response.status_code}"})
-                
-        except Exception as e:
-            results.append({"url": url, "status": f"failed: {str(e)}"})
-            
-    return jsonify({"results": results})
-
 @app.route('/api/campaigns', methods=['GET', 'POST'])
 def handle_campaigns():
     if request.method == 'POST':
@@ -1741,20 +1691,6 @@ def analyze_lead(id):
     
     return jsonify({"analysis": analysis, "decision": decision})
 
-@app.route('/api/templates', methods=['GET', 'POST'])
-def handle_templates():
-    if request.method == 'GET':
-        templates = db.get_templates()
-        return jsonify(templates)
-    elif request.method == 'POST':
-        data = request.json
-        db.add_template(data['name'], data['subject'], data['body'])
-        return jsonify({"message": "Template added"})
-
-@app.route('/api/templates/<int:id>', methods=['DELETE'])
-def delete_template(id):
-    db.delete_template(id)
-    return jsonify({"message": "Template deleted"})
 
 @app.route('/api/bulk-scrape-simple', methods=['POST'])
 def bulk_scrape_simple():
