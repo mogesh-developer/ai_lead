@@ -8,14 +8,15 @@ import LeadDetail from './pages/LeadDetail';
 import SearchLeads from './pages/SearchLeads';
 import Guide from './pages/Guide';
 import WebSearch from './pages/WebSearch';
+import DomainSearch from './pages/DomainSearch';
 import Analytics from './pages/Analytics';
 
 function App() {
   return (
     <Router>
-      <div className="min-h-screen flex flex-col">
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex">
         <Navbar />
-        <main className="flex-grow container mx-auto px-4 py-8">
+        <main className="flex-grow ml-0 md:ml-64">
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/upload" element={<Upload />} />
@@ -25,12 +26,12 @@ function App() {
             <Route path="/lead/:id" element={<LeadDetail />} />
             <Route path="/guide" element={<Guide />} />
             <Route path="/web-search" element={<WebSearch />} />
+            <Route path="/domain-search" element={<DomainSearch />} />
           </Routes>
         </main>
       </div>
     </Router>
   );
 }
-
 
 export default App;

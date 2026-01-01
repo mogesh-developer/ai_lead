@@ -20,10 +20,10 @@ const SearchLeads = () => {
       const response = await api.post('/search-leads', { industry, location });
       setResults(response.data);
       console.log('Search results:', response.data);
-      // Navigate removed to show results on the same page
-      // if (response.data.leads && response.data.leads.length > 0) {
-      //   navigate('/leads');
-      // }
+      // Navigate to leads page to show the newly found leads
+      if (response.data.leads && response.data.leads.length > 0) {
+        navigate('/leads');
+      }
     } catch (error) {
       console.error("Search failed", error);
     } finally {
@@ -60,130 +60,142 @@ const SearchLeads = () => {
   };
 
   return (
-    <div className="max-w-2xl mx-auto mt-10">
-      <div className="bg-white p-6 rounded-lg shadow-md mb-6">
-        <h2 className="text-2xl font-bold mb-6">Find Leads</h2>
-
-        <div className="flex border-b mb-6">
-          <button
-            className={`py-2 px-4 font-medium ${activeTab === 'search' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}
-            onClick={() => setActiveTab('search')}
-          >
-            AI Discovery (Search)
-          </button>
-          <button
-            className={`py-2 px-4 font-medium ${activeTab === 'scrape' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}
-            onClick={() => setActiveTab('scrape')}
-          >
-            Web Scraper (URL)
-          </button>
-          <button
-            className={`py-2 px-4 font-medium ${activeTab === 'keyword' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}
-            onClick={() => setActiveTab('keyword')}
-          >
-            Keyword Search
-          </button>
-        </div>
-
-        {activeTab === 'search' ? (
-          <form onSubmit={handleSearch} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Industry / Keyword</label>
-                <input
-                  type="text"
-                  value={industry}
-                  onChange={(e) => setIndustry(e.target.value)}
-                  placeholder="e.g. Digital Marketing"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Location</label>
-                <input
-                  type="text"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  placeholder="e.g. Chennai"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2"
-                  required
-                />
-              </div>
-            </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400"
-            >
-              {loading ? 'AI Agent Searching...' : 'Find Leads'}
-            </button>
-          </form>
-        ) : activeTab === 'scrape' ? (
-          <form onSubmit={handleScrape} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Website URL</label>
-              <input
-                type="url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://example.com/contact"
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2"
-                required
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-purple-600 text-white py-2 px-4 rounded-md hover:bg-purple-700 disabled:bg-gray-400"
-            >
-              {loading ? 'Scraping Website...' : 'Scrape Leads'}
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={handleKeywordSearch} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Keywords</label>
-              <input
-                type="text"
-                value={keywords}
-                onChange={(e) => setKeywords(e.target.value)}
-                placeholder="e.g. SaaS companies with remote teams"
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2"
-                required
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 disabled:bg-gray-400"
-            >
-              {loading ? 'AI Agent Searching...' : 'Find Leads by Keyword'}
-            </button>
-          </form>
-        )}
-      </div>
-
-      {results && (
-
-        <div className="bg-white p-6 rounded-lg shadow-md">
-          <h3 className="text-lg font-semibold text-green-600 mb-4">{results.message}</h3>
-          <div className="space-y-2">
-            {results.leads.map((lead, index) => (
-              <div key={index} className="border-b pb-2 last:border-0">
-                <p className="font-medium">{lead.company}</p>
-                <p className="text-sm text-gray-500">{lead.name} | {lead.email} | {lead.phone}</p>
-              </div>
-            ))}
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6">
+      <div className="max-w-4xl mx-auto pb-20">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl shadow-xl p-8">
+          <div className="mb-8">
+            <h2 className="text-4xl font-bold text-white mb-2 flex items-center">
+              <span className="w-2 h-8 bg-gradient-to-b from-blue-400 to-purple-400 rounded mr-3"></span>
+              Find Leads
+            </h2>
+            <p className="text-slate-300">Search, scrape, or discover leads using multiple methods</p>
           </div>
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="mt-4 w-full bg-gray-100 text-gray-800 py-2 rounded hover:bg-gray-200"
-          >
-            Go to Dashboard to Analyze
-          </button>
+
+          <div className="flex border-b border-slate-700 mb-8 gap-1">
+            <button
+              className={`py-3 px-6 font-semibold transition-all duration-200 ${
+                activeTab === 'search' 
+                  ? 'text-blue-400 border-b-2 border-blue-400' 
+                  : 'text-slate-400 hover:text-slate-300'
+              }`}
+              onClick={() => setActiveTab('search')}
+            >
+              AI Discovery (Search)
+            </button>
+            <button
+              className={`py-3 px-6 font-semibold transition-all duration-200 ${
+                activeTab === 'scrape' 
+                  ? 'text-blue-400 border-b-2 border-blue-400' 
+                  : 'text-slate-400 hover:text-slate-300'
+              }`}
+              onClick={() => setActiveTab('scrape')}
+            >
+              Web Scraper (URL)
+            </button>
+            <button
+              className={`py-3 px-6 font-semibold transition-all duration-200 ${
+                activeTab === 'keyword' 
+                  ? 'text-blue-400 border-b-2 border-blue-400' 
+                  : 'text-slate-400 hover:text-slate-300'
+              }`}
+              onClick={() => setActiveTab('keyword')}
+            >
+              Keyword Search
+            </button>
+          </div>
+
+          {activeTab === 'search' && (
+            <form onSubmit={handleSearch} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-200 mb-3">Industry / Keyword</label>
+                  <input
+                    type="text"
+                    value={industry}
+                    onChange={(e) => setIndustry(e.target.value)}
+                    placeholder="e.g. Digital Marketing"
+                    className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-200 mb-3">Location</label>
+                  <input
+                    type="text"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    placeholder="e.g. New York, USA"
+                    className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
+                    required
+                  />
+                </div>
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 disabled:from-slate-600 disabled:to-slate-600 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 shadow-lg"
+              >
+                {loading ? 'Searching...' : 'Search Leads'}
+              </button>
+            </form>
+          )}
+
+          {activeTab === 'scrape' && (
+            <form onSubmit={handleScrape} className="space-y-6">
+              <div>
+                <label className="block text-sm font-semibold text-slate-200 mb-3">Website URL</label>
+                <input
+                  type="url"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="e.g. https://example.com/team"
+                  className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 disabled:from-slate-600 disabled:to-slate-600 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 shadow-lg"
+              >
+                {loading ? 'Scraping...' : 'Scrape Website'}
+              </button>
+            </form>
+          )}
+
+          {activeTab === 'keyword' && (
+            <form onSubmit={handleKeywordSearch} className="space-y-6">
+              <div>
+                <label className="block text-sm font-semibold text-slate-200 mb-3">Keywords (comma-separated)</label>
+                <textarea
+                  value={keywords}
+                  onChange={(e) => setKeywords(e.target.value)}
+                  placeholder="e.g. CEO, marketing director, sales manager"
+                  rows="4"
+                  className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 disabled:from-slate-600 disabled:to-slate-600 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 shadow-lg"
+              >
+                {loading ? 'Searching...' : 'Find by Keywords'}
+              </button>
+            </form>
+          )}
+
+          {results && (
+            <div className="mt-8 p-6 bg-slate-700/50 rounded-lg border border-slate-600">
+              <h3 className="text-xl font-bold text-white mb-4">Results</h3>
+              <pre className="text-slate-300 text-sm overflow-auto max-h-60 bg-slate-900 p-4 rounded border border-slate-700">
+                {JSON.stringify(results, null, 2)}
+              </pre>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 };

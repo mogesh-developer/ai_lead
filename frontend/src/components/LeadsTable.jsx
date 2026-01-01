@@ -13,14 +13,14 @@ const LeadsTable = ({ leads, onRefresh }) => {
   // Filtered and sorted leads
   const filteredLeads = useMemo(() => {
     let filtered = leads.filter(lead => {
-      const matchesSearch = !searchTerm || 
+      const matchesSearch = !searchTerm ||
         lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         lead.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         lead.company?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         lead.location?.toLowerCase().includes(searchTerm.toLowerCase());
-      
+
       const matchesStatus = !statusFilter || lead.status === statusFilter;
-      
+
       return matchesSearch && matchesStatus;
     });
 
@@ -28,17 +28,17 @@ const LeadsTable = ({ leads, onRefresh }) => {
     filtered.sort((a, b) => {
       let aVal = a[sortBy];
       let bVal = b[sortBy];
-      
+
       if (sortBy === 'trust_score') {
         aVal = aVal || 0;
         bVal = bVal || 0;
       }
-      
+
       if (typeof aVal === 'string') {
         aVal = aVal.toLowerCase();
         bVal = bVal.toLowerCase();
       }
-      
+
       if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
       if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
       return 0;
@@ -95,7 +95,7 @@ const LeadsTable = ({ leads, onRefresh }) => {
 
   const handleExportCSV = () => {
     if (leads.length === 0) return;
-    
+
     const headers = ['ID', 'Name', 'Email', 'Phone', 'Company', 'Location', 'Status', 'Trust Score'];
     const csvContent = [
       headers.join(','),
@@ -152,20 +152,20 @@ const LeadsTable = ({ leads, onRefresh }) => {
             <option value="skipped">Skipped</option>
           </select>
         </div>
-        
+
         <div className="flex justify-between items-center">
           <div className="flex items-center space-x-4">
             <span className="text-sm text-gray-500">{selectedLeads.length} selected</span>
             {selectedLeads.length > 0 && (
               <>
-                <button 
+                <button
                   onClick={handleBulkAnalyze}
                   disabled={processing}
                   className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
                 >
                   {processing ? 'Processing...' : 'Analyze Selected'}
                 </button>
-                <button 
+                <button
                   onClick={handleBulkOutreach}
                   disabled={processing}
                   className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:opacity-50"
@@ -175,7 +175,7 @@ const LeadsTable = ({ leads, onRefresh }) => {
               </>
             )}
           </div>
-          <button 
+          <button
             onClick={handleExportCSV}
             className="px-3 py-1 border border-gray-300 text-gray-700 text-sm rounded hover:bg-gray-50"
           >
@@ -188,8 +188,8 @@ const LeadsTable = ({ leads, onRefresh }) => {
           <thead className="bg-gray-50">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <input 
-                  type="checkbox" 
+                <input
+                  type="checkbox"
                   onChange={handleSelectAll}
                   checked={filteredLeads.length > 0 && selectedLeads.length === filteredLeads.length}
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
@@ -214,7 +214,7 @@ const LeadsTable = ({ leads, onRefresh }) => {
             {filteredLeads.map((lead) => (
               <tr key={lead.id} className={selectedLeads.includes(lead.id) ? 'bg-blue-50' : ''}>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <input 
+                  <input
                     type="checkbox"
                     checked={selectedLeads.includes(lead.id)}
                     onChange={() => handleSelectOne(lead.id)}
@@ -239,7 +239,7 @@ const LeadsTable = ({ leads, onRefresh }) => {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   <Link to={`/lead/${lead.id}`} className="text-blue-600 hover:text-blue-900 mr-2">View</Link>
-                  <button 
+                  <button
                     onClick={() => handleQuickAnalyze(lead.id)}
                     className="text-purple-600 hover:text-purple-900 text-xs"
                   >
