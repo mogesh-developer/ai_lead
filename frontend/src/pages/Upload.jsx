@@ -53,10 +53,21 @@ const Upload = () => {
       return;
     }
 
+    if (!manualLead.email.trim()) {
+      setMessage('Email is required');
+      return;
+    }
+
+    if (!manualLead.email.includes('@')) {
+      setMessage('Invalid email format');
+      return;
+    }
+
     setUploading(true);
     try {
       const response = await api.post('/leads', manualLead);
       setMessage('Lead added successfully!');
+      console.log('Lead added:', response.data);
       setManualLead({
         name: '',
         email: '',
@@ -68,8 +79,9 @@ const Upload = () => {
       });
       setTimeout(() => navigate('/dashboard'), 2000);
     } catch (error) {
-      setMessage('Failed to add lead. Please try again.');
-      console.error(error);
+      const errorMessage = error.response?.data?.error || 'Failed to add lead. Please try again.';
+      setMessage(errorMessage);
+      console.error('Error details:', error.response?.data || error.message);
     } finally {
       setUploading(false);
     }
@@ -165,13 +177,14 @@ const Upload = () => {
                     placeholder="Full name"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-200 mb-2">Email</label>
+              <div>
+                  <label className="block text-sm font-semibold text-slate-200 mb-2">Email *</label>
                   <input
                     type="email"
                     name="email"
                     value={manualLead.email}
                     onChange={handleManualChange}
+                    required
                     className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
                     placeholder="email@example.com"
                   />

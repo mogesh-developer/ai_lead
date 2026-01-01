@@ -11,12 +11,18 @@ const Analytics = () => {
       try {
         const [statsRes, leadsRes] = await Promise.all([
           api.get('/dashboard-stats'),
-          api.get('/leads')
+          api.get('/leads?per_page=10000')
         ]);
         setStats(statsRes.data);
-        setLeads(leadsRes.data);
+        // Handle both response formats (object with leads property or direct array)
+        const leadsData = leadsRes.data?.leads || leadsRes.data || [];
+        setLeads(Array.isArray(leadsData) ? leadsData : []);
+        console.log("Analytics - Stats:", statsRes.data);
+        console.log("Analytics - Leads:", leadsData);
       } catch (error) {
         console.error("Error fetching analytics data", error);
+        setStats({ total: 0, analyzed: 0, outreach_sent: 0, converted: 0 });
+        setLeads([]);
       } finally {
         setLoading(false);
       }

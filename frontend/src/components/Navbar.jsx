@@ -12,6 +12,7 @@ const Navbar = () => {
   const navLinks = [
     { path: '/dashboard', label: 'Dashboard', icon: '📊' },
     { path: '/analytics', label: 'Analytics', icon: '📈' },
+    { path: '/outreach', label: 'Outreach', icon: '📧' },
     { path: '/search', label: 'Find Leads', icon: '🔍' },
     { path: '/upload', label: 'Upload', icon: '📤' },
     { path: '/web-search', label: 'Web Search', icon: '🌐' },

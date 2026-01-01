@@ -9,6 +9,9 @@ const LeadDetail = () => {
   const [analyzing, setAnalyzing] = useState(false);
   const [sending, setSending] = useState(false);
   const [outreachResult, setOutreachResult] = useState(null);
+  const [showDirectOutreach, setShowDirectOutreach] = useState(false);
+  const [directMessage, setDirectMessage] = useState('');
+  const [directSubject, setDirectSubject] = useState('');
   const [notes, setNotes] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -50,6 +53,38 @@ const LeadDetail = () => {
       fetchLead();
     } catch (error) {
       console.error("Outreach failed", error);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleDirectOutreach = async () => {
+    if (!directMessage.trim() || !directSubject.trim()) {
+      alert('Please fill in both subject and message');
+      return;
+    }
+
+    setSending(true);
+    try {
+      const response = await api.post('/send-outreach', {
+        lead_id: id,
+        message: directMessage,
+        subject: directSubject,
+        message_type: 'email'
+      });
+      setOutreachResult({
+        ...response.data,
+        direct: true
+      });
+      fetchLead();
+      setShowDirectOutreach(false);
+      setDirectMessage('');
+      setDirectSubject('');
+    } catch (error) {
+      console.error("Direct outreach failed", error);
+      setOutreachResult({
+        error: error.response?.data?.error || 'Failed to send outreach'
+      });
     } finally {
       setSending(false);
     }
@@ -233,9 +268,27 @@ const LeadDetail = () => {
               <span className="w-2 h-6 bg-gradient-to-b from-green-400 to-emerald-400 rounded mr-3"></span>
               Outreach
             </h2>
-            <p className="text-slate-400 mb-6">Send personalized messages</p>
-            {lead.status === 'analyzed' || lead.status === 'outreach_sent' ? (
-              <div className="space-y-4">
+            <p className="text-slate-400 mb-6">Send messages to this lead</p>
+            
+            {outreachResult && !showDirectOutreach && (
+              <div className={`mb-6 p-4 rounded-lg border ${
+                outreachResult.error
+                  ? 'bg-red-500/10 border-red-500/30'
+                  : 'bg-green-500/10 border-green-500/30'
+              }`}>
+                <p className={`font-semibold ${outreachResult.error ? 'text-red-300' : 'text-green-300'} mb-2`}>
+                  {outreachResult.error ? '❌ Error' : '✅ Sent Successfully!'}
+                </p>
+                {outreachResult.message && (
+                  <p className="text-slate-300 text-sm">{outreachResult.message}</p>
+                )}
+              </div>
+            )}
+
+            {/* Option 1: AI-Based Outreach */}
+            {lead.status === 'analyzed' && !showDirectOutreach ? (
+              <div className="space-y-4 mb-6 pb-6 border-b border-slate-700">
+                <h3 className="font-semibold text-white">Option 1: AI-Generated Message</h3>
                 <div className={`rounded-lg p-4 border ${
                   lead.trust_score > 60 
                     ? 'bg-green-500/10 border-green-500/30' 
@@ -254,17 +307,71 @@ const LeadDetail = () => {
                 >
                   {sending ? 'Generating & Sending...' : 'Generate & Send Message'}
                 </button>
-
-                {outreachResult && (
-                  <div className="mt-4 p-4 bg-green-500/10 rounded-lg border border-green-500/30">
-                    <p className="font-semibold text-green-300 mb-2">✅ Sent Successfully!</p>
-                    <p className="text-slate-300 text-sm italic">" {outreachResult.content}"</p>
-                  </div>
-                )}
               </div>
-            ) : (
+            ) : null}
+
+            {/* Option 2: Direct Custom Outreach */}
+            <div className="space-y-4">
+              <h3 className="font-semibold text-white">Option 2: Send Custom Message</h3>
+              {!showDirectOutreach ? (
+                <button
+                  onClick={() => setShowDirectOutreach(true)}
+                  className="w-full bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white font-semibold py-2 px-6 rounded-lg transition-all duration-200"
+                >
+                  ✏️ Compose Custom Message
+                </button>
+              ) : (
+                <div className="space-y-4 bg-slate-700/30 p-4 rounded-lg border border-slate-600">
+                  <input
+                    type="text"
+                    placeholder="Email Subject"
+                    value={directSubject}
+                    onChange={(e) => setDirectSubject(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 text-white rounded-lg text-sm focus:outline-none focus:border-blue-500"
+                  />
+                  
+                  <textarea
+                    placeholder="Write your message here..."
+                    value={directMessage}
+                    onChange={(e) => setDirectMessage(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 text-white rounded-lg text-sm h-32 resize-none focus:outline-none focus:border-blue-500"
+                  />
+                  
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleDirectOutreach}
+                      disabled={sending}
+                      className="flex-1 bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 disabled:from-slate-600 disabled:to-slate-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200"
+                    >
+                      {sending ? 'Sending...' : 'Send Message'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowDirectOutreach(false);
+                        setDirectMessage('');
+                        setDirectSubject('');
+                      }}
+                      disabled={sending}
+                      className="flex-1 bg-slate-600 hover:bg-slate-500 disabled:bg-slate-700 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Empty State */}
+            {lead.status !== 'analyzed' && !showDirectOutreach && lead.status !== 'outreach_sent' && (
               <div className="text-center py-8">
-                <p className="text-slate-400">Run AI Analysis first to enable outreach</p>
+                <p className="text-slate-300 mb-4">📧 Direct Outreach Available</p>
+                <p className="text-slate-400 text-sm mb-4">Send custom messages to this lead without waiting for AI analysis</p>
+                <button
+                  onClick={() => setShowDirectOutreach(true)}
+                  className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white font-semibold py-2 px-6 rounded-lg transition-all duration-200"
+                >
+                  ✏️ Send Now
+                </button>
               </div>
             )}
           </div>

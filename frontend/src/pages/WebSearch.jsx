@@ -11,6 +11,7 @@ const WebSearch = () => {
     noneWords: '' 
   });
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [resultsPerPage, setResultsPerPage] = useState(10);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState([]);
   const [selectedResults, setSelectedResults] = useState([]);
@@ -102,10 +103,99 @@ const WebSearch = () => {
     setLoading(true);
     try {
       const response = await api.post('/save-extracted-leads', { leads: extractedLeads });
-      setMessage(response.data.message);
+      console.log("Save response:", response.data);
+      console.log("Full response object:", JSON.stringify(response.data, null, 2));
+      
+      const saved = response.data.saved || 0;
+      const failed = response.data.failed || 0;
+      const failedLeads = response.data.failed_leads || [];
+      const errors = response.data.errors || [];
+      
+      console.log("Saved count:", saved);
+      console.log("Failed count:", failed);
+      console.log("Failed leads:", failedLeads);
+      console.log("Error messages:", errors);
+      
+      // Build detailed message
+      let messageText = `✓ Saved ${saved}/${extractedLeads.length} leads`;
+      
+      if (failed > 0) {
+        messageText += `\n\n❌ ${failed} lead(s) failed:\n`;
+        const leadsToShow = failedLeads && failedLeads.length > 0 ? failedLeads : errors;
+        
+        if (Array.isArray(leadsToShow)) {
+          leadsToShow.slice(0, 5).forEach((item, idx) => {
+            if (item.name && item.email) {
+              // It's a failed_leads object
+              messageText += `• ${item.name} (${item.email})\n  Reason: ${item.reason}\n`;
+            } else {
+              // It's an error string
+              messageText += `• ${item}\n`;
+            }
+          });
+          if (leadsToShow.length > 5) {
+            messageText += `• ... and ${leadsToShow.length - 5} more\n`;
+          }
+        }
+      }
+      
+      setMessage(messageText);
+      
+      // Show detailed error modal if there are failures
+      if (failed > 0) {
+        console.warn("Failed leads details:", failedLeads);
+        console.warn("Error details:", errors);
+        alert(`Saved ${saved} leads successfully!\n\nFailed: ${failed} leads\n\nCheck console (F12) for details.`);
+      }
+      
+      // Clear extracted leads after save
+      if (saved > 0) {
+        setTimeout(() => {
+          setExtractedLeads([]);
+          if (failed === 0) {
+            setMessage(`✓ All ${saved} leads saved successfully!`);
+          }
+        }, 1500);
+      }
     } catch (error) {
       console.error("Saving leads failed", error);
-      setMessage("Failed to save leads to database.");
+      console.error("Error response:", error.response?.data);
+      const errorMsg = error.response?.data?.error || error.message || "Failed to save leads to database.";
+      setMessage(`✗ Error: ${errorMsg}`);
+      alert(`Error saving leads:\n${errorMsg}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveWithoutCleanup = async () => {
+    if (extractedLeads.length === 0) return;
+    setLoading(true);
+    try {
+      const response = await api.post('/save-extracted-leads-no-validation', { leads: extractedLeads });
+      console.log("Save (no validation) response:", response.data);
+      
+      const saved = response.data.saved || 0;
+      const failed = response.data.failed || 0;
+      
+      const messageText = `✓ Saved ${saved}/${extractedLeads.length} leads (without validation)`;
+      setMessage(messageText);
+      
+      if (failed > 0) {
+        alert(`Saved ${saved} leads successfully!\n\nNote: ${failed} lead(s) had issues (duplicates or database constraints).`);
+      }
+      
+      // Clear extracted leads after save
+      if (saved > 0) {
+        setTimeout(() => {
+          setExtractedLeads([]);
+        }, 1500);
+      }
+    } catch (error) {
+      console.error("Saving leads (no validation) failed", error);
+      const errorMsg = error.response?.data?.error || error.message || "Failed to save leads to database.";
+      setMessage(`✗ Error: ${errorMsg}`);
+      alert(`Error saving leads:\n${errorMsg}`);
     } finally {
       setLoading(false);
     }
@@ -227,7 +317,20 @@ const WebSearch = () => {
             >
               {loading ? 'Searching...' : 'Search'}
             </button>
-          </form>
+            <div className="flex items-center space-x-3 pt-3">
+              <label className="text-sm font-semibold text-slate-300">Results per page:</label>
+              <select
+                value={resultsPerPage}
+                onChange={(e) => setResultsPerPage(parseInt(e.target.value))}
+                className="px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-blue-400"
+              >
+                <option value={5}>5</option>
+                <option value={10}>10</option>
+                <option value={15}>15</option>
+                <option value={20}>20</option>
+                <option value={30}>30</option>
+              </select>
+            </div>          </form>
         </div>
 
         {/* Results Section */}
@@ -312,15 +415,26 @@ const WebSearch = () => {
 
           {extractedLeads.length > 0 && (
             <div className="mt-8 space-y-6">
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center flex-wrap gap-4">
                 <h3 className="text-xl font-bold text-white">Extracted Leads ({extractedLeads.length})</h3>
-                <button
-                  onClick={handleSaveLeads}
-                  disabled={loading}
-                  className="bg-green-600 hover:bg-green-700 disabled:bg-slate-600 text-white py-2 px-6 rounded-lg font-semibold text-sm transition-colors disabled:cursor-not-allowed"
-                >
-                  {loading ? 'Saving...' : 'Save All to Database'}
-                </button>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleSaveLeads}
+                    disabled={loading}
+                    title="Saves leads with validation - ensures all leads have valid name and email"
+                    className="bg-green-600 hover:bg-green-700 disabled:bg-slate-600 text-white py-2 px-6 rounded-lg font-semibold text-sm transition-colors disabled:cursor-not-allowed"
+                  >
+                    {loading ? 'Saving...' : '✓ Save & Validate'}
+                  </button>
+                  <button
+                    onClick={handleSaveWithoutCleanup}
+                    disabled={loading}
+                    title="Saves all leads without validation - may include incomplete records"
+                    className="bg-amber-600 hover:bg-amber-700 disabled:bg-slate-600 text-white py-2 px-6 rounded-lg font-semibold text-sm transition-colors disabled:cursor-not-allowed"
+                  >
+                    {loading ? 'Saving...' : '⚡ Save All (No Cleanup)'}
+                  </button>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">

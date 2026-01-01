@@ -23,12 +23,18 @@ const Dashboard = () => {
     try {
       const [statsRes, leadsRes, settingsRes] = await Promise.all([
         api.get('/dashboard-stats').catch(() => ({ data: { total: 0, analyzed: 0, outreach_sent: 0, converted: 0 } })),
-        api.get('/leads').catch(() => ({ data: [] })),
+        api.get('/leads').catch(() => ({ data: { leads: [] } })),
         api.get('/settings').catch(() => ({ data: { autopilot: false } }))
       ]);
 
+      console.log("Dashboard Stats Response:", statsRes.data);
+      console.log("Leads Response:", leadsRes.data);
+      
       setStats(statsRes.data || { total: 0, analyzed: 0, outreach_sent: 0, converted: 0 });
-      setLeads((leadsRes.data || []).slice(0, 10));
+      // Handle both array and object response formats
+      const leadsData = leadsRes.data?.leads || leadsRes.data || [];
+      console.log("Processed leads data:", leadsData);
+      setLeads(Array.isArray(leadsData) ? leadsData.slice(0, 10) : []);
       setAutopilot(settingsRes.data?.autopilot || false);
       setLoading(false);
     } catch (error) {

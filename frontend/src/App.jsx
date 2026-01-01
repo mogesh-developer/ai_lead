@@ -10,6 +10,7 @@ import Guide from './pages/Guide';
 import WebSearch from './pages/WebSearch';
 import DomainSearch from './pages/DomainSearch';
 import Analytics from './pages/Analytics';
+import Outreach from './pages/Outreach';
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
             <Route path="/search" element={<SearchLeads />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/analytics" element={<Analytics />} />
+            <Route path="/outreach" element={<Outreach />} />
             <Route path="/lead/:id" element={<LeadDetail />} />
             <Route path="/guide" element={<Guide />} />
             <Route path="/web-search" element={<WebSearch />} />
