@@ -13,3 +13,5 @@ playwright
 requests
 lxml
 serpapi
+gspread
+google-auth

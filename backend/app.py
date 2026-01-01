@@ -12,11 +12,14 @@ from email.mime.multipart import MIMEMultipart
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 # from flask_apscheduler import APScheduler
-# import google.generativeai as genai
-# # from groq import Groq
-# import groq
+import google.generativeai as genai
+from groq import Groq
+import groq
 from dotenv import load_dotenv
 from serpapi import Client
+from urllib.parse import urlparse
+import gspread
+from google.oauth2.service_account import Credentials
 import db
 import random
 import time
@@ -27,7 +30,18 @@ load_dotenv()
 
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST", "OPTIONS"], "allow_headers": ["Content-Type"]}})
+
+# Add OPTIONS method support for all routes
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = jsonify({"status": "ok"})
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type")
+        return response, 200
+
 # scheduler = APScheduler()
 
 # Initialize DB
@@ -39,16 +53,221 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 SMTP_EMAIL = os.getenv("SMTP_EMAIL")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY")
+SNOV_CLIENT_ID = os.getenv("SNOV_CLIENT_ID")
+SNOV_CLIENT_SECRET = os.getenv("SNOV_CLIENT_SECRET")
+
+groq_client = None
 
 if GEMINI_API_KEY:
-    # genai.configure(api_key=GEMINI_API_KEY)
-    pass
+    genai.configure(api_key=GEMINI_API_KEY)
 
 if GROQ_API_KEY:
-    # groq_client = groq.Client(api_key=GROQ_API_KEY)
-    pass
+    groq_client = Groq(api_key=GROQ_API_KEY)
 
-# --- AI AGENTS ---
+def agent_ai_clean_search_results(search_results):
+    """Agent: AI Search Result Cleaner (Filters listicles and extracts official sites)"""
+    print(f"DEBUG: Starting AI clean. GEMINI_API_KEY set: {bool(GEMINI_API_KEY)}, GROQ_API_KEY set: {bool(GROQ_API_KEY)}")
+    
+    # Convert search results to a readable string for the AI
+    results_text = ""
+    for i, r in enumerate(search_results):
+        results_text += f"Result {i+1}:\nTitle: {r.get('title')}\nURL: {r.get('href')}\nSnippet: {r.get('body')}\n---\n"
+
+    prompt = f"""
+    You are an automated lead-extraction, verification, and data-cleaning assistant.
+
+    You will receive Google search results collected via SerpAPI.
+    Each result may be:
+    - an official company website
+    - OR a “Top / Best / Leading / List” article that mentions multiple companies
+
+    YOUR TASK (STRICT WORKFLOW):
+
+    1. CLASSIFY EACH SEARCH RESULT:
+       - If it is an OFFICIAL COMPANY WEBSITE → treat it as a company source.
+       - If it is a LIST ARTICLE (Top / Best / Leading / Ranking / List):
+           a) Extract the company names mentioned in the article.
+           b) For EACH company name, find its OFFICIAL COMPANY WEBSITE.
+           c) Use ONLY the official website as the data source.
+           d) Do NOT use data from the list article itself.
+
+    2. IGNORE COMPLETELY:
+       - Business directories (Justdial, IndiaMart, Sulekha, Clutch, GoodFirms, Glassdoor, etc.)
+       - Blogs or review pages that are not owned by the company
+       - Comparison or ranking sites
+
+    3. FOR EACH VERIFIED OFFICIAL COMPANY WEBSITE, EXTRACT:
+       - company_name
+       - official_website
+       - email (from homepage / contact / about page if available)
+       - phone_number (if available)
+       - full_address (street or area if available)
+       - city
+       - state
+       - country
+
+    4. TRUST & CONFIDENCE EVALUATION (DO NOT GUESS):
+       - Mark confidence_score as:
+           • High → clearly official site with contact info
+           • Medium → official site but limited contact info
+           • Low → uncertain ownership or missing verification
+       - If any field is not found, return null.
+
+    STRICT RULES:
+    - NEVER invent or guess information.
+    - NEVER take contact details from list articles or directories.
+    - Output MUST be valid JSON only.
+    - Do NOT include explanations, notes, or text outside JSON.
+
+    OUTPUT FORMAT (STRICT JSON ARRAY):
+    [
+      {{
+        "company_name": "",
+        "official_website": "",
+        "email": null,
+        "phone_number": null,
+        "full_address": null,
+        "city": "",
+        "state": "",
+        "country": "",
+        "confidence_score": ""
+      }}
+    ]
+
+    INPUT DATA:
+    {results_text}
+    """
+    
+    # Try Gemini first
+    if GEMINI_API_KEY:
+        try:
+            print("DEBUG: Attempting Gemini API for cleaning")
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            response = model.generate_content(prompt)
+            print(f"DEBUG: Gemini response received, length: {len(response.text)}")
+            
+            # Extract JSON from response
+            json_match = re.search(r'\[.*\]', response.text, re.DOTALL)
+            if json_match:
+                result = json.loads(json_match.group())
+                print(f"DEBUG: Successfully cleaned with Gemini, found {len(result)} results")
+                return result
+            else:
+                print(f"DEBUG: No JSON array found in Gemini response")
+        except Exception as e:
+            print(f"DEBUG: Gemini Cleaning Error: {type(e).__name__}: {e}")
+    
+    # Fallback to Groq
+    if groq_client:
+        try:
+            print("DEBUG: Falling back to Groq API for cleaning")
+            response = groq_client.chat.completions.create(
+                model="mixtral-8x7b-32768",
+                messages=[
+                    {"role": "system", "content": "You are a lead extraction specialist. Extract business leads from search results and return ONLY a valid JSON array, no other text."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1
+            )
+            
+            response_text = response.choices[0].message.content
+            print(f"DEBUG: Groq response received, length: {len(response_text)}")
+            
+            # Extract JSON from response
+            json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
+            if json_match:
+                result = json.loads(json_match.group())
+                print(f"DEBUG: Successfully cleaned with Groq, found {len(result)} results")
+                return result
+            else:
+                print(f"DEBUG: No JSON array found in Groq response")
+        except Exception as e:
+            print(f"DEBUG: Groq Cleaning Error: {type(e).__name__}: {e}")
+    
+    return {"error": "No AI service available. Please configure GEMINI_API_KEY or GROQ_API_KEY."}
+
+def agent_ai_extract_leads(text):
+    """Agent: AI Lead Extraction Agent (Cleans and aligns pasted data)"""
+    print(f"DEBUG: Starting AI extraction. GEMINI_API_KEY set: {bool(GEMINI_API_KEY)}")
+    print(f"DEBUG: GROQ_API_KEY set: {bool(GROQ_API_KEY)}")
+    
+    # Try Gemini first
+    if GEMINI_API_KEY:
+        try:
+            prompt = f"""
+    Extract business leads from the following text. 
+    The text might be messy, copied from search results or websites.
+    Extract: Name, Email, Phone, Company, Position, and Website if available.
+    
+    Text:
+    {text}
+    
+    Return the results as a JSON array of objects. 
+    Each object should have keys: 'name', 'email', 'phone', 'company', 'position', 'website'.
+    If a field is missing, use an empty string.
+    Return ONLY the JSON array, no other text.
+    """
+            
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            response = model.generate_content(prompt)
+            print(f"DEBUG: Gemini response received: {response.text[:200]}...")
+            
+            # Extract JSON from response
+            json_match = re.search(r'\[.*\]', response.text, re.DOTALL)
+            if json_match:
+                leads = json.loads(json_match.group(0))
+                print(f"DEBUG: Successfully extracted {len(leads)} leads with Gemini")
+                return leads
+            else:
+                print(f"AI Response did not contain JSON array: {response.text}")
+                return []
+        except Exception as e:
+            print(f"Gemini AI Extraction Error: {e}")
+            print(f"DEBUG: Error type: {type(e).__name__}")
+    
+    # Fallback to Groq if Gemini fails
+    if groq_client:
+        try:
+            print("DEBUG: Falling back to Groq API")
+            prompt = f"""
+    Extract business leads from the following text. 
+    The text might be messy, copied from search results or websites.
+    Extract: Name, Email, Phone, Company, Position, and Website if available.
+    
+    Text:
+    {text}
+    
+    Return the results as a JSON array of objects. 
+    Each object should have keys: 'name', 'email', 'phone', 'company', 'position', 'website'.
+    If a field is missing, use an empty string.
+    Return ONLY the JSON array, no other text.
+    """
+            
+            response = groq_client.chat.completions.create(
+                model="mixtral-8x7b-32768",
+                messages=[
+                    {"role": "system", "content": "You are a lead extraction specialist. Extract business leads from text and return ONLY a valid JSON array."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1
+            )
+            
+            response_text = response.choices[0].message.content
+            print(f"DEBUG: Groq response received: {response_text[:200]}...")
+            
+            # Extract JSON from response
+            json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
+            if json_match:
+                leads = json.loads(json_match.group(0))
+                print(f"DEBUG: Successfully extracted {len(leads)} leads with Groq")
+                return leads
+            else:
+                print(f"Groq response did not contain JSON array: {response_text}")
+                return []
+        except Exception as e:
+            print(f"Groq Extraction Error: {e}")
+    
+    return {"error": "No AI service available. Please set GEMINI_API_KEY or GROQ_API_KEY."}
 
 def agent_ingest_leads(file_path):
     """Agent 1: Lead Ingestion Agent"""
@@ -565,6 +784,46 @@ def search_with_serpapi(query, max_results=5):
         print(f"SerpApi query failed: {e}")
         return []
 
+def export_to_google_sheets(leads, sheet_id, sheet_name="Leads"):
+    """Export leads to Google Sheets"""
+    creds_json = os.getenv("GOOGLE_SHEETS_CREDENTIALS")
+    if not creds_json:
+        print("Google Sheets credentials missing")
+        return False
+    
+    try:
+        creds_dict = json.loads(creds_json)
+        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        client = gspread.authorize(creds)
+        
+        sh = client.open_by_key(sheet_id)
+        try:
+            worksheet = sh.worksheet(sheet_name)
+        except gspread.exceptions.WorksheetNotFound:
+            worksheet = sh.add_worksheet(title=sheet_name, rows="100", cols="20")
+            
+        # Prepare data
+        headers = ["Name", "Email", "Phone", "Company", "Website", "Address", "Source"]
+        data = [headers]
+        for lead in leads:
+            data.append([
+                lead.get('name', ''),
+                lead.get('email', ''),
+                lead.get('phone', ''),
+                lead.get('company', ''),
+                lead.get('website', ''),
+                lead.get('address', ''),
+                lead.get('source', '')
+            ])
+            
+        worksheet.clear()
+        worksheet.update('A1', data)
+        return True
+    except Exception as e:
+        print(f"Error exporting to Google Sheets: {e}")
+        return False
+
 def search_the_web(query, max_results=5):
     """Optimized web search using SerpApi as primary engine since API key is available."""
     all_results = []
@@ -601,19 +860,171 @@ def search_the_web(query, max_results=5):
     return all_results
 
 
+def get_snov_token():
+    """Get access token from Snov.io"""
+    if not SNOV_CLIENT_ID or not SNOV_CLIENT_SECRET:
+        print("Snov.io credentials missing")
+        return None
+    
+    try:
+        url = "https://api.snov.io/v1/oauth/access_token"
+        data = {
+            'grant_type': 'client_credentials',
+            'client_id': SNOV_CLIENT_ID,
+            'client_secret': SNOV_CLIENT_SECRET
+        }
+        response = requests.post(url, data=data)
+        response.raise_for_status()
+        return response.json().get('access_token')
+    except Exception as e:
+        print(f"Error getting Snov.io token: {e}")
+        return None
+
+def search_snov_domain(domain):
+    """Search for emails in a domain using Snov.io"""
+    # Clean domain: remove http, https, www, and trailing slashes
+    domain = domain.lower().strip()
+    if domain.startswith('http'):
+        from urllib.parse import urlparse
+        domain = urlparse(domain).netloc
+    if domain.startswith('www.'):
+        domain = domain[4:]
+    domain = domain.split('/')[0]
+    
+    print(f"🔍 Snov.io searching cleaned domain: {domain}")
+    
+    token = get_snov_token()
+    if not token:
+        return None
+    
+    try:
+        url = "https://api.snov.io/v2/domain-emails-with-info"
+        params = {
+            'domain': domain,
+            'type': 'all',
+            'limit': 10,
+            'lastId': 0
+        }
+        headers = {'Authorization': f'Bearer {token}'}
+        response = requests.get(url, params=params, headers=headers)
+        response.raise_for_status()
+        
+        data = response.json()
+        print(f"DEBUG Snov.io Response: {json.dumps(data)}") # Log full response for debugging
+        
+        emails_data = data.get('emails', [])
+        
+        leads = []
+        for item in emails_data:
+            leads.append({
+                'email': item.get('email'),
+                'name': f"{item.get('firstName', '')} {item.get('lastName', '')}".strip(),
+                'position': item.get('position', ''),
+                'source': 'Snov.io'
+            })
+        return leads
+    except Exception as e:
+        print(f"Snov.io domain search failed for {domain}: {e}")
+        return []
+
+
+def verify_email_rapid(email):
+    """Verify an email address using rapid-email-verifier.fly.dev"""
+    if not email:
+        return None
+    
+    print(f"🔍 Verifying email: {email}")
+    try:
+        url = f"https://rapid-email-verifier.fly.dev/validate?email={email}"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        print(f"❌ Email verification failed for {email}: {e}")
+        return {"error": str(e), "valid": False}
+
+
+def is_listicle(title, url=""):
+    """Check if a title or URL looks like a listicle or directory"""
+    title_lower = title.lower()
+    url_lower = url.lower()
+    
+    # Listicle patterns in title
+    title_patterns = [
+        r'\btop\b',
+        r'\blist\b',
+        r'\bbest\b',
+        r'companies\s+in',
+        r'startups\s+in',
+        r'agencies\s+in',
+        r'firms\s+in',
+        r'jobs\b',
+        r'directory',
+        r'reviews',
+        r'ranking',
+        r'hiring',
+        r'careers',
+        r'guide\b',
+        r'resource\b',
+        r'collection\b',
+        r'popular\b'
+    ]
+    
+    if any(re.search(pattern, title_lower) for pattern in title_patterns):
+        return True
+        
+    # Check for titles starting with a number (e.g., "11 Top SaaS...", "38 Saas Company jobs")
+    if re.match(r'^\d+\s+', title_lower):
+        return True
+        
+    # Directory/Social/Aggregator domains
+    excluded_domains = [
+        'linkedin.com', 'facebook.com', 'twitter.com', 'instagram.com', 
+        'yelp.com', 'yellowpages.com', 'justdial.com', 'glassdoor',
+        'indeed.com', 'naukri.com', 'wellfound.com', 'angel.co',
+        'crunchbase.com', 'clutch.co', 'g2.com', 'capterra.com',
+        'reddit.com', 'quora.com', 'medium.com', 'builtinchennai.in',
+        'getlatka.com', 'f6s.com', 'hoodshub.tech', 'saasboomi.org',
+        'youtube.com', 'vimeo.com', 'pinterest.com', 'github.com',
+        'upwork.com', 'freelancer.com', 'toptal.com',
+        'indiamart.com', 'tradeindia.com', 'sulekha.com', 'bark.com',
+        'trustpilot.com', 'sortlist.com', 'goodfirms.co', 'designrush.com',
+        'themanifest.com', 'upcity.com', 'clutch.co', 'sortlist.com',
+        'zoominfo.com', 'apollo.io', 'lusha.com', 'rocketreach.co',
+        'hunter.io', 'skrapp.io', 'snov.io'
+    ]
+    
+    if any(domain in url_lower for domain in excluded_domains):
+        return True
+        
+    # Check for deep paths that look like articles or lists
+    path_patterns = [
+        '/articles/', '/blog/', '/blogs/', '/list/', '/top-', '/best-', '/jobs/', '/careers/', '/collections/'
+    ]
+    
+    try:
+        parsed_url = urlparse(url)
+        if any(pattern in parsed_url.path.lower() for pattern in path_patterns):
+            return True
+    except:
+        pass
+        
+    return False
+
 def agent_discovery(industry, location):
     """Agent 1.5: Lead Discovery Agent (Real Web Search & Scraping)"""
-    print(f"🔍 Searching for {industry} in {location}...")
+    print(f"Searching for {industry} in {location}...")
     
     found_leads = []
     
     # Try multiple query variations optimized for finding contact information
+    # Added negative keywords to exclude listicles and directories from the search itself
+    negative_filters = "-intitle:top -intitle:best -intitle:list -intitle:ranking -intitle:jobs -intitle:hiring"
     queries = [
-        f'"{industry}" companies in "{location}" contact email phone',
-        f'{industry} companies {location} email address contact',
-        f'list of {industry} companies in {location} with contact details',
-        f'{industry} agencies {location} email phone number',
-        f'{industry} firms {location} contact information'
+        f'"{industry}" company "{location}" official website {negative_filters}',
+        f'{industry} in {location} contact us {negative_filters}',
+        f'"{industry}" {location} headquarters email {negative_filters}',
+        f'"{industry}" {location} office phone number {negative_filters}'
     ]
     
     all_results = []
@@ -621,49 +1032,45 @@ def agent_discovery(industry, location):
 
     try:
         for query in queries:
-            results = search_the_web(query, max_results=8)  # Increased from 5 to 8 for more results
+            results = search_the_web(query, max_results=10)
             for r in results:
                 link = r.get('href', '')
+                title = r.get('title', '')
+                
+                # Skip listicles and directories
+                if is_listicle(title, link):
+                    print(f"Skipping listicle/directory: {title}")
+                    continue
+                    
                 if link and link not in seen_links:
                     all_results.append(r)
                     seen_links.add(link)
             
-            if len(all_results) >= 15:  # Increased threshold
+            if len(all_results) >= 20:
                 break
         
         if not all_results:
-            print("❌ No results from any search engine. Returning empty list.")
+            print("No results from any search engine. Returning empty list.")
             return []
-
-        print(f"✅ Found {len(all_results)} total raw results.")
 
         # Filter results to only include relevant ones (contain industry or location in title/href)
         filtered_results = []
         industry_lower = industry.lower()
         location_lower = location.lower()
-        
-        # Split industry into keywords for broader matching
-        industry_keywords = industry_lower.split()
-        
         for r in all_results:
             title = r.get('title', '').lower()
             href = r.get('href', '').lower()
-            snippet = r.get('body', '').lower()
             
-            # Check if any industry keyword is present
-            industry_match = any(k in title for k in industry_keywords) or any(k in snippet for k in industry_keywords)
-            location_match = location_lower in title or location_lower in snippet
-            
-            if industry_match or location_match:
+            # Prioritize original company websites (usually shorter paths)
+            path_depth = len(urlparse(r.get('href', '')).path.split('/'))
+            if path_depth <= 3: # Likely a homepage or contact page
                 filtered_results.append(r)
         
         if not filtered_results:
-            print("⚠️ No strictly relevant results found after filtering. Using top raw results.")
-            filtered_results = all_results[:5] # Fallback to top 5 raw results
-        else:
-            print(f"✅ Filtered down to {len(filtered_results)} relevant results.")
+            print("No relevant results found after filtering. Using original results.")
+            filtered_results = all_results
 
-        for i, r in enumerate(filtered_results[:10]):  # Process top 10 filtered results
+        for i, r in enumerate(filtered_results[:15]):  # Process top 15 filtered results
             print(f"--- Processing result {i+1} ---")
             title = r.get('title', 'Unknown Company')
             link = r.get('href', '')
@@ -672,8 +1079,8 @@ def agent_discovery(industry, location):
             print(f"Link: {link}")
             
             # Skip only social media and irrelevant directories
-            if any(x in link.lower() for x in ['linkedin.com', 'facebook.com', 'twitter.com', 'instagram.com']):
-                print("Skipping social media link.")
+            if any(x in link.lower() for x in ['linkedin.com', 'facebook.com', 'twitter.com', 'instagram.com', 'yelp.com', 'yellowpages.com', 'justdial.com']):
+                print("Skipping social media/directory link.")
                 continue
 
             print(f"Scraping {link}...")
@@ -692,6 +1099,21 @@ def agent_discovery(industry, location):
                 if snippet_emails:
                     email = snippet_emails[0]
                     print(f"Found email in snippet: {email}")
+            
+            # Fallback: Try Snov.io domain search if we have a link but no email
+            if not email and link and SNOV_CLIENT_ID:
+                try:
+                    domain = urlparse(link).netloc
+                    if domain:
+                        print(f"Trying Snov.io domain search for: {domain}")
+                        snov_leads = search_snov_domain(domain)
+                        if snov_leads:
+                            email = snov_leads[0].get('email', '')
+                            if not name:
+                                name = snov_leads[0].get('name', '')
+                            print(f"Found email via Snov.io: {email}")
+                except Exception as snov_err:
+                    print(f"Snov.io fallback error: {snov_err}")
 
             # Extract company name from title
             company_name = title.split('-')[0].split('|')[0].strip()
@@ -805,8 +1227,63 @@ def agent_verify_lead(lead):
     #     return True  # Default to valid if API fails
 
 def agent_analyze_business(lead):
-    """Agent 3: Business Analysis Agent (Mock for now)"""
-    # Mock analysis for demonstration
+    """Agent 3: Business Analysis Agent using Groq AI"""
+    if not GROQ_API_KEY or not groq_client:
+        # Fallback to mock analysis if no API key
+        return agent_analyze_business_mock(lead)
+    
+    try:
+        company = lead.get('company', 'Unknown Company')
+        location = lead.get('location', 'Unknown Location')
+        name = lead.get('name', 'Unknown Contact')
+        
+        prompt = f"""
+        Analyze this business lead for outreach potential:
+        
+        Company: {company}
+        Location: {location}
+        Contact: {name}
+        
+        Please provide a JSON response with the following structure:
+        {{
+            "trust_score": <number 0-100 indicating lead quality>,
+            "business_maturity": "<one of: Startup, SMB, Enterprise>",
+            "growth_potential": "<one of: Low, Medium, High>",
+            "reasoning": "<brief explanation of your analysis>"
+        }}
+        
+        Consider factors like:
+        - Company size and maturity based on name
+        - Location advantages
+        - Industry indicators
+        - Potential for B2B partnerships
+        """
+        
+        response = groq_client.chat.completions.create(
+            model="llama3-8b-8192",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=300
+        )
+        
+        result_text = response.choices[0].message.content.strip()
+        
+        # Try to parse JSON response
+        try:
+            analysis = json.loads(result_text)
+            # Ensure trust_score is an integer
+            analysis['trust_score'] = int(analysis.get('trust_score', 50))
+            return analysis
+        except json.JSONDecodeError:
+            # If JSON parsing fails, extract information manually
+            return agent_analyze_business_mock(lead)
+            
+    except Exception as e:
+        print(f"AI Analysis failed: {e}")
+        return agent_analyze_business_mock(lead)
+
+def agent_analyze_business_mock(lead):
+    """Fallback mock analysis"""
     import random
     
     # Simple logic based on company name and location
@@ -986,17 +1463,30 @@ def agent_keyword_search(keywords):
     print(f"Searching for keywords: {keywords}...")
     
     found_leads = []
-    query = f"{keywords} contact email"
+    # Added negative filters to exclude listicles
+    negative_filters = "-intitle:top -intitle:best -intitle:list -intitle:ranking"
+    query = f'"{keywords}" official website contact {negative_filters}'
     
     try:
-        results = search_the_web(query, max_results=10)
+        results = search_the_web(query, max_results=15)
         
         for r in results:
             title = r.get('title', 'Unknown Company')
             link = r.get('href', '')
             snippet = r.get('body', '')
             
-            if any(x in link.lower() for x in ['linkedin.com', 'facebook.com', 'twitter.com', 'instagram.com']):
+            # Skip listicles and directories
+            if is_listicle(title, link):
+                print(f"Skipping listicle/directory: {title}")
+                continue
+
+            if any(x in link.lower() for x in ['linkedin.com', 'facebook.com', 'twitter.com', 'instagram.com', 'yelp.com', 'yellowpages.com', 'justdial.com']):
+                continue
+
+            # Prioritize original company websites (usually shorter paths)
+            path_depth = len(urlparse(link).path.split('/'))
+            if path_depth > 4: # Likely a deep blog post or irrelevant page
+                print(f"Skipping deep link: {link}")
                 continue
 
             print(f"Scraping {link}...")
@@ -1011,6 +1501,21 @@ def agent_keyword_search(keywords):
                 snippet_emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', snippet)
                 if snippet_emails:
                     email = snippet_emails[0]
+            
+            # Fallback: Try Snov.io domain search if we have a link but no email
+            if not email and link and SNOV_CLIENT_ID:
+                try:
+                    domain = urlparse(link).netloc
+                    if domain:
+                        print(f"Trying Snov.io domain search for: {domain}")
+                        snov_leads = search_snov_domain(domain)
+                        if snov_leads:
+                            email = snov_leads[0].get('email', '')
+                            if not name:
+                                name = snov_leads[0].get('name', '')
+                            print(f"Found email via Snov.io: {email}")
+                except Exception as snov_err:
+                    print(f"Snov.io fallback error: {snov_err}")
 
             company_name = title.split('-')[0].split('|')[0].strip()
             if len(company_name) < 3:
@@ -1045,15 +1550,128 @@ def agent_keyword_search(keywords):
 def web_search():
     data = request.json
     query = data.get('query')
+    advanced = data.get('advanced', {})
     
     if not query:
         return jsonify({"error": "Missing query"}), 400
+    
+    # Construct advanced query
+    final_query = query
+    
+    # Add negative filters to exclude listicles by default
+    final_query += " -intitle:top -intitle:best -intitle:list -intitle:ranking -intitle:jobs"
+    
+    if advanced.get('exactPhrase'):
+        final_query += f' "{advanced["exactPhrase"]}"'
+    if advanced.get('anyWords'):
+        final_query += f' ({advanced["anyWords"]})'
+    if advanced.get('noneWords'):
+        none_parts = advanced['noneWords'].split()
+        for part in none_parts:
+            if not part.startswith('-'):
+                final_query += f' -{part}'
+            else:
+                final_query += f' {part}'
+    if advanced.get('site'):
+        final_query += f" site:{advanced['site']}"
+    if advanced.get('filetype'):
+        final_query += f" filetype:{advanced['filetype']}"
         
     try:
-        results = search_the_web(query, max_results=10)
-        return jsonify({"results": results})
+        results = search_the_web(final_query, max_results=20)
+        # Filter out listicles and directories
+        filtered_results = [
+            r for r in results 
+            if not is_listicle(r.get('title', ''), r.get('href', ''))
+        ]
+        return jsonify({"results": filtered_results[:10], "final_query": final_query})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route('/api/clean-search-results', methods=['POST'])
+def clean_search_results():
+    data = request.json
+    results = data.get('results')
+    
+    if not results or not isinstance(results, list):
+        return jsonify({"error": "Missing or invalid results list"}), 400
+        
+    cleaned_leads = agent_ai_clean_search_results(results)
+    
+    if isinstance(cleaned_leads, dict) and "error" in cleaned_leads:
+        return jsonify(cleaned_leads), 500
+        
+    return jsonify({"leads": cleaned_leads})
+
+@app.route('/api/save-extracted-leads', methods=['POST'])
+def save_extracted_leads():
+    data = request.json
+    leads = data.get('leads')
+    
+    if not leads or not isinstance(leads, list):
+        return jsonify({"error": "Missing or invalid leads list"}), 400
+        
+    added_count = 0
+    for lead_data in leads:
+        # Map AI fields to DB fields
+        lead = {
+            'name': lead_data.get('company_name') or lead_data.get('name') or "Unknown",
+            'email': lead_data.get('email') or "",
+            'phone': lead_data.get('phone_number') or lead_data.get('phone') or "",
+            'company': lead_data.get('company_name') or lead_data.get('company') or "",
+            'location': f"{lead_data.get('city', '')}, {lead_data.get('country', '')}".strip(', '),
+            'website': lead_data.get('official_website') or lead_data.get('website') or "",
+            'source': 'AI Web Search Extraction'
+        }
+        
+        # Basic validation: need at least a name/company and (email or phone or website)
+        if (lead['name'] != "Unknown" or lead['company']) and (lead['email'] or lead['phone'] or lead['website']):
+            # Check if email already exists to avoid duplicates
+            existing = None
+            if lead['email']:
+                existing = db.get_lead_by_email(lead['email'])
+            
+            if not existing:
+                db.insert_lead(lead)
+                added_count += 1
+                
+    return jsonify({"message": f"Successfully saved {added_count} leads to database"})
+
+@app.route('/api/ai-extract', methods=['POST'])
+def ai_extract():
+    data = request.json
+    text = data.get('text')
+    
+    if not text:
+        return jsonify({"error": "Missing text"}), 400
+        
+    leads = agent_ai_extract_leads(text)
+    
+    if isinstance(leads, dict) and "error" in leads:
+        return jsonify(leads), 500
+        
+    # Insert into DB
+    added_count = 0
+    for lead_data in leads:
+        lead = {
+            'name': lead_data.get('name') or "Unknown",
+            'email': lead_data.get('email') or "",
+            'phone': lead_data.get('phone') or "",
+            'company': lead_data.get('company') or "",
+            'location': "Extracted",
+            'source': 'AI Extraction'
+        }
+        # Basic validation: need at least a name and (email or phone)
+        if lead['name'] != "Unknown" and (lead['email'] or lead['phone']):
+            existing = db.get_lead_by_email(lead['email']) if lead['email'] else None
+            if not existing:
+                db.insert_lead(lead)
+                added_count += 1
+                
+    return jsonify({
+        "message": f"Extracted {len(leads)} leads, added {added_count} new leads", 
+        "leads": leads
+    })
 
 @app.route('/api/keyword-search', methods=['POST'])
 def keyword_search():
@@ -1077,6 +1695,54 @@ def search_leads():
         
     leads = agent_discovery(industry, location)
     return jsonify({"message": f"Found and added {len(leads)} leads", "leads": leads})
+
+@app.route('/api/search-domain', methods=['POST'])
+def search_domain():
+    data = request.json
+    domain = data.get('domain')
+    
+    if not domain:
+        return jsonify({"error": "Missing domain"}), 400
+    
+    if not SNOV_CLIENT_ID or not SNOV_CLIENT_SECRET:
+        return jsonify({"error": "Snov.io credentials missing in .env file"}), 401
+        
+    leads = search_snov_domain(domain)
+    
+    # If search_snov_domain returned None or something went wrong inside
+    if leads is None:
+        return jsonify({"error": "Failed to authenticate with Snov.io. Check your Client ID and Secret."}), 401
+        
+    # Insert found leads into DB
+    added_count = 0
+    for lead_data in leads:
+        lead = {
+            'name': lead_data.get('name') or f"Contact at {domain}",
+            'email': lead_data.get('email'),
+            'phone': '',
+            'company': domain,
+            'location': 'Unknown',
+            'source': 'Snov.io Domain Search'
+        }
+        existing = db.get_lead_by_email(lead['email'])
+        if not existing:
+            db.insert_lead(lead)
+            added_count += 1
+            
+    return jsonify({
+        "message": f"Found {len(leads)} emails, added {added_count} new leads", 
+        "leads": leads
+    })
+
+@app.route('/api/verify-email', methods=['POST'])
+def verify_email_endpoint():
+    data = request.json
+    email = data.get('email')
+    if not email:
+        return jsonify({"error": "Email is required"}), 400
+    
+    result = verify_email_rapid(email)
+    return jsonify(result)
 
 @app.route('/api/scrape-url', methods=['POST'])
 def scrape_url():
@@ -1203,43 +1869,6 @@ def analyze_lead(id):
     db.update_lead_analysis(id, json.dumps(analysis), analysis.get('trust_score', 0), status)
     
     return jsonify({"analysis": analysis, "decision": decision})
-
-@app.route('/api/outreach/<int:id>', methods=['POST'])
-def outreach_lead(id):
-    lead = db.get_lead_by_id(id)
-    if not lead:
-        return jsonify({"error": "Lead not found"}), 404
-    
-    # Ensure analysis exists
-    if not lead['ai_analysis']:
-        analysis = agent_analyze_business(lead)
-        db.update_lead_analysis(id, json.dumps(analysis), analysis.get('trust_score', 0), 'analyzed')
-    else:
-        if isinstance(lead['ai_analysis'], str):
-             try:
-                 analysis = json.loads(lead['ai_analysis'])
-             except:
-                 analysis = {}
-        else:
-            analysis = lead['ai_analysis']
-            
-    # Generate content
-    strategy = agent_message_strategy(lead, analysis)
-    message = agent_generate_message(lead, strategy)
-    
-    # Send
-    success = agent_send_outreach(lead, message)
-    
-    if success:
-        # Update status
-        db.update_lead_status(id, 'outreach_sent')
-        return jsonify({
-            "message": "Outreach sent successfully", 
-            "content": message,
-            "strategy": strategy
-        })
-    else:
-        return jsonify({"error": "Failed to send outreach"}), 500
 
 @app.route('/api/leads/<int:id>/notes', methods=['PUT'])
 def update_lead_notes(id):

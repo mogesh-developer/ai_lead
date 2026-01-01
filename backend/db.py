@@ -1,6 +1,7 @@
 import mysql.connector
 from mysql.connector import Error
 import os
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -29,6 +30,12 @@ def init_db():
         # Add notes column if it doesn't exist
         try:
             cursor.execute("ALTER TABLE leads ADD COLUMN notes TEXT")
+        except Error:
+            pass  # Column might already exist
+        
+        # Add ai_analysis column if it doesn't exist
+        try:
+            cursor.execute("ALTER TABLE leads ADD COLUMN ai_analysis JSON")
         except Error:
             pass  # Column might already exist
         
@@ -117,6 +124,9 @@ def get_all_leads():
         cursor = conn.cursor(dictionary=True)
         cursor.execute("SELECT * FROM leads ORDER BY created_at DESC")
         leads = cursor.fetchall()
+        for lead in leads:
+            if lead.get('ai_analysis'):
+                lead['ai_analysis'] = json.loads(lead['ai_analysis'])
         cursor.close()
         conn.close()
     return leads
@@ -128,6 +138,8 @@ def get_lead_by_id(lead_id):
         cursor = conn.cursor(dictionary=True)
         cursor.execute("SELECT * FROM leads WHERE id = %s", (lead_id,))
         lead = cursor.fetchone()
+        if lead and lead.get('ai_analysis'):
+            lead['ai_analysis'] = json.loads(lead['ai_analysis'])
         cursor.close()
         conn.close()
     return lead
@@ -149,6 +161,16 @@ def update_lead_notes(lead_id, notes):
         cursor = conn.cursor()
         sql = "UPDATE leads SET notes = %s WHERE id = %s"
         cursor.execute(sql, (notes, lead_id))
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+def update_lead_analysis(lead_id, analysis_json, trust_score, status):
+    conn = get_db_connection()
+    if conn:
+        cursor = conn.cursor()
+        sql = "UPDATE leads SET ai_analysis = %s, trust_score = %s, status = %s WHERE id = %s"
+        cursor.execute(sql, (analysis_json, trust_score, status, lead_id))
         conn.commit()
         cursor.close()
         conn.close()
