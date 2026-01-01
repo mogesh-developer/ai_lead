@@ -68,17 +68,19 @@ const Dashboard = () => {
   const successRate = stats.analyzed > 0 ? Math.round((stats.outreach_sent / stats.analyzed) * 100) : 0;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+    <div className="w-full h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="bg-slate-800/50 backdrop-blur-md border-b border-slate-700 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-6 py-6 flex justify-between items-center">
+      <header className="bg-gradient-to-r from-slate-800 to-slate-900 border-b border-slate-700 px-8 py-6 flex-shrink-0">
+        <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold text-white">Dashboard</h1>
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+              📊 Dashboard
+            </h1>
             <p className="text-slate-400 text-sm mt-1">Real-time lead management & analytics</p>
           </div>
           <div className="flex items-center space-x-6">
-            <div className="flex items-center bg-slate-700/50 px-4 py-2 rounded-lg border border-slate-600">
-              <span className="text-slate-300 text-sm font-medium mr-3">Autopilot:</span>
+            <div className="flex items-center bg-slate-700/50 px-4 py-2 rounded-lg border border-slate-600 hover:border-slate-500 transition-all">
+              <span className="text-slate-300 text-sm font-semibold mr-3">Autopilot:</span>
               <button
                 onClick={toggleAutopilot}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 focus:outline-none ${
@@ -99,7 +101,7 @@ const Dashboard = () => {
             </div>
             <button
               onClick={fetchDashboardData}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors duration-200 text-sm font-medium"
+              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white rounded-lg transition-all duration-200 text-sm font-semibold shadow-lg"
             >
               ↻ Refresh
             </button>
@@ -108,7 +110,7 @@ const Dashboard = () => {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="flex-grow overflow-y-auto px-8 py-8 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-700">
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <StatCard 
@@ -143,85 +145,87 @@ const Dashboard = () => {
 
         {/* Key Metrics Row */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          <div className="bg-gradient-to-br from-slate-800 to-slate-700 rounded-lg p-6 border border-slate-600">
+          <div className="bg-gradient-to-br from-slate-800/80 to-slate-700/50 rounded-xl p-6 border border-slate-700 hover:border-slate-600 transition-all shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-white font-semibold">Conversion Rate</h3>
-              <span className="text-3xl font-bold text-emerald-400">{conversionRate}%</span>
+              <span className="text-4xl font-bold bg-gradient-to-r from-emerald-400 to-green-400 bg-clip-text text-transparent">{conversionRate}%</span>
             </div>
-            <div className="w-full bg-slate-600 rounded-full h-2">
+            <div className="w-full bg-slate-700 rounded-full h-3">
               <div 
-                className="bg-gradient-to-r from-emerald-500 to-emerald-600 h-2 rounded-full transition-all duration-500"
+                className="bg-gradient-to-r from-emerald-500 to-emerald-600 h-3 rounded-full transition-all duration-500 shadow-lg shadow-emerald-500/50"
                 style={{ width: `${conversionRate}%` }}
               ></div>
             </div>
-            <p className="text-slate-400 text-xs mt-2">{stats.converted || 0} of {stats.total || 0} leads converted</p>
+            <p className="text-slate-400 text-xs mt-3">📈 {stats.converted || 0} of {stats.total || 0} leads converted</p>
           </div>
 
-          <div className="bg-gradient-to-br from-slate-800 to-slate-700 rounded-lg p-6 border border-slate-600">
+          <div className="bg-gradient-to-br from-slate-800/80 to-slate-700/50 rounded-xl p-6 border border-slate-700 hover:border-slate-600 transition-all shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-white font-semibold">Success Rate</h3>
-              <span className="text-3xl font-bold text-blue-400">{successRate}%</span>
+              <span className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">{successRate}%</span>
             </div>
-            <div className="w-full bg-slate-600 rounded-full h-2">
+            <div className="w-full bg-slate-700 rounded-full h-3">
               <div 
-                className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full transition-all duration-500"
+                className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-500 shadow-lg shadow-blue-500/50"
                 style={{ width: `${successRate}%` }}
               ></div>
             </div>
-            <p className="text-slate-400 text-xs mt-2">{stats.outreach_sent || 0} of {stats.analyzed || 0} leads reached</p>
+            <p className="text-slate-400 text-xs mt-3">🎯 {stats.outreach_sent || 0} of {stats.analyzed || 0} leads reached</p>
           </div>
         </div>
 
         {/* Recent Leads Table */}
-        <div className="bg-gradient-to-br from-slate-800 to-slate-700 rounded-lg border border-slate-600 overflow-hidden shadow-xl">
-          <div className="px-6 py-4 border-b border-slate-600 bg-slate-800/50">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold text-white">Recent Leads</h2>
-              <span className="text-slate-400 text-sm">{leads.length} leads</span>
-            </div>
+        <div className="bg-gradient-to-br from-slate-800/80 to-slate-700/50 rounded-xl border border-slate-700 overflow-hidden shadow-xl">
+          <div className="px-6 py-4 border-b border-slate-700 bg-slate-800/50 flex justify-between items-center">
+            <h2 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">📋 Recent Leads</h2>
+            <span className="text-slate-400 text-sm bg-slate-700/50 px-3 py-1 rounded-full">{leads.length} leads</span>
           </div>
           <div className="overflow-x-auto">
             {leads.length > 0 ? (
               <table className="w-full">
                 <thead>
                   <tr className="bg-slate-700/50 border-b border-slate-600">
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider">Name</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider">Email</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider">Company</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider">Action</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Name</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Email</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Company</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-600">
                   {leads.map((lead, idx) => (
-                    <tr key={idx} className="hover:bg-slate-700/30 transition-colors">
-                      <td className="px-6 py-4 text-sm text-white font-medium">{lead.name || 'N/A'}</td>
+                    <tr key={idx} className="hover:bg-slate-700/50 transition-colors">
+                      <td className="px-6 py-4 text-sm text-white font-semibold">{lead.name || 'N/A'}</td>
                       <td className="px-6 py-4 text-sm text-slate-300">{lead.email || 'N/A'}</td>
                       <td className="px-6 py-4 text-sm text-slate-300">{lead.company || 'N/A'}</td>
                       <td className="px-6 py-4 text-sm">
-                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          lead.status === 'converted' ? 'bg-emerald-500/20 text-emerald-400' :
-                          lead.status === 'contacted' ? 'bg-blue-500/20 text-blue-400' :
-                          'bg-slate-600 text-slate-300'
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                          lead.status === 'converted' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+                          lead.status === 'contacted' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' :
+                          lead.status === 'analyzed' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' :
+                          lead.status === 'outreach_sent' ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30' :
+                          'bg-slate-600/50 text-slate-200 border border-slate-600'
                         }`}>
-                          {lead.status || 'pending'}
+                          {lead.status ? lead.status.replace('_', ' ') : 'pending'}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-sm">
-                        <a href={`/lead/${lead.id}`} className="text-blue-400 hover:text-blue-300 font-medium transition-colors">View →</a>
+                        <a href={`/lead/${lead.id}`} className="text-blue-400 hover:text-blue-300 font-semibold transition-colors inline-flex items-center gap-1">
+                          View <span>→</span>
+                        </a>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             ) : (
-              <div className="px-6 py-12 text-center">
-                <p className="text-slate-400">No leads yet. Start by uploading or searching for leads.</p>
+              <div className="px-6 py-16 text-center">
+                <div className="text-5xl mb-4">📭</div>
+                <p className="text-slate-400 text-lg">No leads yet. Start by uploading or searching for leads.</p>
               </div>
             )}
           </div>
         </div>
-      </main>
     </div>
   );
 };
