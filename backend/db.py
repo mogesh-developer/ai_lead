@@ -70,16 +70,50 @@ def init_db():
         print("Database initialized successfully.")
 
 def insert_lead(data):
-    conn = get_db_connection()
-    if conn:
+    """Insert a lead into the database"""
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn:
+            print("[INSERT-LEAD] Error: Could not get database connection")
+            return False
+        
         cursor = conn.cursor()
         sql = """INSERT INTO leads (name, email, phone, company, location, status, trust_score, source) 
                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"""
-        val = (data.get('name'), data.get('email'), data.get('phone'), data.get('company'), data.get('location'), data.get('status', 'new'), data.get('trust_score', 0), data.get('source', 'upload'))
+        val = (
+            data.get('name', '').strip() if data.get('name') else None,
+            data.get('email', '').strip() if data.get('email') else None,
+            data.get('phone', '').strip() if data.get('phone') else None,
+            data.get('company', '').strip() if data.get('company') else None,
+            data.get('location', '').strip() if data.get('location') else None,
+            data.get('status', 'new'),
+            data.get('trust_score', 0),
+            data.get('source', 'upload')
+        )
+        
+        print(f"[INSERT-LEAD] Executing INSERT for: {val[0]} ({val[1]})")
         cursor.execute(sql, val)
+        
+        # Always commit explicitly
         conn.commit()
+        
+        print(f"[INSERT-LEAD] ✓ Committed to database: {val[0]}")
         cursor.close()
-        conn.close()
+        return True
+        
+    except Exception as e:
+        print(f"[INSERT-LEAD] ✗ Error inserting lead: {e}")
+        if conn:
+            try:
+                conn.rollback()
+                print(f"[INSERT-LEAD] Rollback executed")
+            except Exception as rb_error:
+                print(f"[INSERT-LEAD] Rollback failed: {rb_error}")
+        return False
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
 
 def get_setting(key):
     conn = get_db_connection()
