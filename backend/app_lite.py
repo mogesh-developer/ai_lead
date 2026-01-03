@@ -41,33 +41,19 @@ def save_extracted_leads():
             print(f"\n[SAVE-LEADS] [{i+1}/{len(leads)}] Raw lead data: {json.dumps(lead)}")
             
             # Prepare lead data for database insertion
-            # Support both 'location' and 'position' fields from AI extraction
-            location_val = (lead.get('location', '') or lead.get('position', '')).strip()
-            
-            # Clean and prepare fields
-            # Try multiple sources for name: name → company → position → website domain → email prefix
-            name = (lead.get('name', '') or '').strip()
-            if not name:
-                name = (lead.get('company', '') or '').strip()
-            if not name:
-                name = (lead.get('position', '') or '').strip()
-            if not name:
-                website = (lead.get('website', '') or '').strip()
-                if website:
-                    # Extract domain name from website
-                    name = website.replace('https://', '').replace('http://', '').replace('www.', '').split('/')[0].split('?')[0]
-            if not name:
-                email = (lead.get('email', '') or '').strip()
-                if email and '@' in email:
-                    # Extract email prefix as name
-                    name = email.split('@')[0].replace('.', ' ').title()
+            location_val = lead.get('location', '').strip()
             
             email = (lead.get('email', '') or '').strip()
             phone = (lead.get('phone', '') or '').strip() if lead.get('phone') else None
             company = (lead.get('company', '') or '').strip() if lead.get('company') else None
             
+            if not company:
+                website = (lead.get('website', '') or '').strip()
+                if website:
+                    # Extract domain name from website
+                    company = website.replace('https://', '').replace('http://', '').replace('www.', '').split('/')[0].split('?')[0]
+            
             lead_data = {
-                'name': name,
                 'email': email,
                 'phone': phone,
                 'company': company,
@@ -77,32 +63,32 @@ def save_extracted_leads():
                 'source': 'web_extract'
             }
             
-            print(f"[SAVE-LEADS] [{i+1}/{len(leads)}] Cleaned data: name='{name}', email='{email}', company='{company}'")
+            print(f"[SAVE-LEADS] [{i+1}/{len(leads)}] Cleaned data: company='{company}', email='{email}'")
             
             # Validate required fields
             validation_errors = []
-            if not name:
-                validation_errors.append("no name source available")
+            if not company:
+                validation_errors.append("no company source available")
             if not email:
                 validation_errors.append("empty email")
             if email and '@' not in email:
                 validation_errors.append("invalid email format")
             
             if validation_errors:
-                error_msg = f"Lead #{i+1} ({name or 'NO NAME'}, {email or 'NO EMAIL'}): {', '.join(validation_errors)}"
+                error_msg = f"Lead #{i+1} ({company or 'NO COMPANY'}, {email or 'NO EMAIL'}): {', '.join(validation_errors)}"
                 print(f"[SAVE-LEADS]   ✗ Validation failed: {error_msg}")
                 failed_count += 1
                 errors.append(error_msg)
                 failed_leads.append({
                     'index': i+1,
-                    'name': name or 'EMPTY',
+                    'company': company or 'EMPTY',
                     'email': email or 'EMPTY',
                     'reason': ', '.join(validation_errors)
                 })
                 continue
             
             # Insert lead into database
-            print(f"[SAVE-LEADS]   → Inserting: {name} ({email})")
+            print(f"[SAVE-LEADS]   → Inserting: {company} ({email})")
             result = db.insert_lead(lead_data)
             
             if result:
@@ -110,12 +96,12 @@ def save_extracted_leads():
                 print(f"[SAVE-LEADS]   ✓ Saved successfully")
             else:
                 failed_count += 1
-                error_msg = f"Lead #{i+1} ({name}, {email}): Database insertion failed (duplicate or constraint violation)"
+                error_msg = f"Lead #{i+1} ({company}, {email}): Database insertion failed (duplicate or constraint violation)"
                 print(f"[SAVE-LEADS]   ✗ {error_msg}")
                 errors.append(error_msg)
                 failed_leads.append({
                     'index': i+1,
-                    'name': name,
+                    'company': company,
                     'email': email,
                     'reason': 'Database insertion failed'
                 })
@@ -127,7 +113,7 @@ def save_extracted_leads():
             errors.append(error_msg)
             failed_leads.append({
                 'index': i+1,
-                'name': lead.get('name', lead.get('company', lead.get('website', 'ERROR'))),
+                'company': lead.get('company', lead.get('website', 'ERROR')),
                 'email': lead.get('email', 'ERROR'),
                 'reason': str(e)
             })

@@ -25,7 +25,7 @@ try:
         test_url = results[0].get('href')
         print(f"Scraping: {test_url}")
         try:
-            emails, phones, addresses, names = extract_contact_info(test_url)
+            emails, phones, addresses = extract_contact_info(test_url)
             print(f"Emails: {emails}")
             print(f"Phones: {phones}")
             print(f"Addresses: {addresses}")
@@ -42,4 +42,4 @@ print("\n3. Running full agent_discovery...")
 leads = agent_discovery(industry, location)
 print(f"Total leads found: {len(leads)}")
 for lead in leads:
-    print(f" - {lead['name']} ({lead['company']}): {lead['email']} / {lead['phone']}")
+    print(f" - {lead.get('company', 'Unknown')}: {lead.get('email', 'No email')} / {lead.get('phone', 'No phone')}")

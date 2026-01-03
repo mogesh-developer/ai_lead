@@ -14,7 +14,6 @@ const LeadsTable = ({ leads, onRefresh }) => {
   const filteredLeads = useMemo(() => {
     let filtered = leads.filter(lead => {
       const matchesSearch = !searchTerm ||
-        lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         lead.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         lead.company?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         lead.location?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -96,18 +95,17 @@ const LeadsTable = ({ leads, onRefresh }) => {
   const handleExportCSV = () => {
     if (leads.length === 0) return;
 
-    const headers = ['ID', 'Name', 'Email', 'Phone', 'Company', 'Location', 'Status', 'Trust Score'];
+    const headers = ['ID', 'Company', 'Website', 'Email', 'Phone', 'Confidence', 'Status'];
     const csvContent = [
       headers.join(','),
       ...leads.map(lead => [
         lead.id,
-        `"${lead.name || ''}"`,
+        `"${lead.company || ''}"`,
+        `"${lead.website || ''}"`,
         `"${lead.email || ''}"`,
         `"${lead.phone || ''}"`,
-        `"${lead.company || ''}"`,
-        `"${lead.location || ''}"`,
-        lead.status,
-        lead.trust_score
+        lead.confidence || lead.trust_score || 0,
+        lead.status
       ].join(','))
     ].join('\n');
 
@@ -195,17 +193,23 @@ const LeadsTable = ({ leads, onRefresh }) => {
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onClick={() => handleSort('name')}>
-                Name {sortBy === 'name' && (sortOrder === 'asc' ? '↑' : '↓')}
-              </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onClick={() => handleSort('company')}>
                 Company {sortBy === 'company' && (sortOrder === 'asc' ? '↑' : '↓')}
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onClick={() => handleSort('status')}>
-                Status {sortBy === 'status' && (sortOrder === 'asc' ? '↑' : '↓')}
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onClick={() => handleSort('website')}>
+                Website {sortBy === 'website' && (sortOrder === 'asc' ? '↑' : '↓')}
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onClick={() => handleSort('trust_score')}>
-                Trust Score {sortBy === 'trust_score' && (sortOrder === 'asc' ? '↑' : '↓')}
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onClick={() => handleSort('location')}>
+                Location {sortBy === 'location' && (sortOrder === 'asc' ? '↑' : '↓')}
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onClick={() => handleSort('email')}>
+                Email {sortBy === 'email' && (sortOrder === 'asc' ? '↑' : '↓')}
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onClick={() => handleSort('phone')}>
+                Phone {sortBy === 'phone' && (sortOrder === 'asc' ? '↑' : '↓')}
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onClick={() => handleSort('confidence')}>
+                Confidence {sortBy === 'confidence' && (sortOrder === 'asc' ? '↑' : '↓')}
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
             </tr>
@@ -222,20 +226,30 @@ const LeadsTable = ({ leads, onRefresh }) => {
                   />
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm font-medium text-gray-900">{lead.name}</div>
-                  <div className="text-sm text-gray-500">{lead.email}</div>
+                  <div className="text-sm text-gray-500">{lead.company || 'N/A'}</div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm text-gray-900">{lead.company}</div>
-                  <div className="text-sm text-gray-500">{lead.location}</div>
+                  <div className="text-sm text-gray-500">
+                    {lead.website ? (
+                      <a href={lead.website.startsWith('http') ? lead.website : `https://${lead.website}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                        {lead.website}
+                      </a>
+                    ) : 'N/A'}
+                  </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(lead.status)}`}>
-                    {lead.status}
-                  </span>
+                  <div className="text-sm text-gray-500 truncate max-w-xs" title={lead.location}>
+                    {lead.location || 'N/A'}
+                  </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="text-sm text-gray-900">{lead.email || 'N/A'}</div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="text-sm text-gray-900">{lead.phone || 'N/A'}</div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {lead.trust_score > 0 ? lead.trust_score : '-'}
+                  {lead.confidence || lead.trust_score || 0}%
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   <Link to={`/lead/${lead.id}`} className="text-blue-600 hover:text-blue-900 mr-2">View</Link>

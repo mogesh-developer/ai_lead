@@ -27,17 +27,60 @@ def init_db():
     if conn:
         cursor = conn.cursor()
         
-        # Add notes column if it doesn't exist
-        try:
-            cursor.execute("ALTER TABLE leads ADD COLUMN notes TEXT")
-        except Error:
-            pass  # Column might already exist
+        # Create leads table if it doesn't exist
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS leads (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            company VARCHAR(255),
+            website VARCHAR(255),
+            email VARCHAR(255) UNIQUE,
+            phone VARCHAR(50),
+            confidence INT DEFAULT 0,
+            status VARCHAR(50) DEFAULT 'new',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            location VARCHAR(255),
+            trust_score INT DEFAULT 0,
+            ai_analysis JSON,
+            source VARCHAR(50) DEFAULT 'upload',
+            notes TEXT,
+            campaign_id INT,
+            current_sequence_step INT DEFAULT 1,
+            last_outreach_at TIMESTAMP NULL
+        )
+        """)
+
+        # Add missing columns if table already exists
+        columns_to_add = [
+            ("company", "VARCHAR(255)"),
+            ("website", "VARCHAR(255)"),
+            ("email", "VARCHAR(255)"),
+            ("phone", "VARCHAR(50)"),
+            ("location", "VARCHAR(255)"),
+            ("confidence", "INT DEFAULT 0"),
+            ("notes", "TEXT"),
+            ("ai_analysis", "JSON"),
+            ("source", "VARCHAR(50) DEFAULT 'upload'"),
+            ("campaign_id", "INT"),
+            ("current_sequence_step", "INT DEFAULT 1"),
+            ("last_outreach_at", "TIMESTAMP NULL")
+        ]
         
-        # Add ai_analysis column if it doesn't exist
+        for col_name, col_type in columns_to_add:
+            try:
+                # Check if column exists first to avoid error noise
+                cursor.execute(f"SHOW COLUMNS FROM leads LIKE '{col_name}'")
+                if not cursor.fetchone():
+                    cursor.execute(f"ALTER TABLE leads ADD COLUMN {col_name} {col_type}")
+                    print(f"Added column {col_name} to leads table.")
+            except Error as e:
+                print(f"Error adding column {col_name}: {e}")
+                pass 
+        
+        # Ensure status column can handle all our statuses
         try:
-            cursor.execute("ALTER TABLE leads ADD COLUMN ai_analysis JSON")
+            cursor.execute("ALTER TABLE leads MODIFY COLUMN status VARCHAR(50) DEFAULT 'new'")
         except Error:
-            pass  # Column might already exist
+            pass
         
         # Outreach Logs Table
         cursor.execute("""
@@ -70,47 +113,89 @@ def init_db():
         print("Database initialized successfully.")
 
 def insert_lead(data):
-    """Insert a lead into the database"""
+    """Insert a lead into the database, returns (bool, message)"""
     conn = None
     try:
         conn = get_db_connection()
         if not conn:
-            print("[INSERT-LEAD] Error: Could not get database connection")
-            return False
+            return False, "Database connection failed"
         
         cursor = conn.cursor()
-        sql = """INSERT INTO leads (name, email, phone, company, location, status, trust_score, source) 
-                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"""
-        val = (
-            data.get('name', '').strip() if data.get('name') else None,
-            data.get('email', '').strip() if data.get('email') else None,
-            data.get('phone', '').strip() if data.get('phone') else None,
-            data.get('company', '').strip() if data.get('company') else None,
-            data.get('location', '').strip() if data.get('location') else None,
-            data.get('status', 'new'),
-            data.get('trust_score', 0),
-            data.get('source', 'upload')
-        )
         
-        print(f"[INSERT-LEAD] Executing INSERT for: {val[0]} ({val[1]})")
-        cursor.execute(sql, val)
+        # Prepare fields and values
+        mapping = {
+            'company': ['company', 'company_name', 'business_name'],
+            'website': ['website', 'official_website', 'url', 'site'],
+            'email': ['email', 'email_address', 'contact_email'],
+            'phone': ['phone', 'phone_number', 'contact', 'telephone'],
+            'confidence': ['confidence', 'confidence_score'],
+            'location': ['location', 'address', 'city', 'full_address', 'state', 'country'],
+            'notes': ['notes', 'description', 'comments'],
+            'ai_analysis': ['ai_analysis', 'analysis', 'summary'],
+            'trust_score': ['trust_score', 'score'],
+            'source': ['source', 'origin']
+        }
         
-        # Always commit explicitly
+        db_data = {}
+        for db_col, input_keys in mapping.items():
+            for key in input_keys:
+                if data.get(key) is not None:
+                    val = data[key]
+                    if isinstance(val, str):
+                        val = val.strip()
+                        if val.lower() in ['none', 'null', 'n/a', 'unknown', '']:
+                            continue
+                    db_data[db_col] = val
+                    break
+        
+        if not db_data.get('email'):
+            return False, "Email is a required field"
+
+        fields = list(db_data.keys())
+        placeholders = ['%s'] * len(fields)
+        values = list(db_data.values())
+
+        # Ensure status is always set
+        if 'status' not in fields:
+            fields.append('status')
+            placeholders.append('%s')
+            values.append(data.get('status', 'new'))
+
+        # Handle JSON data
+        for i, col in enumerate(fields):
+            if col == 'ai_analysis' and isinstance(values[i], (dict, list)):
+                values[i] = json.dumps(values[i])
+            elif col == 'confidence' and isinstance(values[i], str):
+                score_map = {'High': 90, 'Medium': 60, 'Low': 30}
+                values[i] = score_map.get(values[i], 0)
+
+        sql = f"INSERT INTO leads ({', '.join(fields)}) VALUES ({', '.join(placeholders)})"
+        
+        print(f"[INSERT-LEAD] SQL: {sql}")
+        print(f"[INSERT-LEAD] Values: {tuple(values)}")
+
+        cursor.execute(sql, tuple(values))
         conn.commit()
         
-        print(f"[INSERT-LEAD] ✓ Committed to database: {val[0]}")
+        lead_id = cursor.lastrowid
+        print(f"[INSERT-LEAD] OK: Committed lead ID {lead_id} for {db_data.get('email')}")
         cursor.close()
-        return True
+        return True, f"Lead added with ID {lead_id}"
         
+    except mysql.connector.IntegrityError as e:
+        if e.errno == 1062: # Duplicate entry
+            error_msg = f"Duplicate entry for email '{db_data.get('email')}'"
+        else:
+            error_msg = f"Database integrity error: {e}"
+        
+        print(f"[INSERT-LEAD] ERROR: {error_msg}")
+        if conn: conn.rollback()
+        return False, error_msg
     except Exception as e:
-        print(f"[INSERT-LEAD] ✗ Error inserting lead: {e}")
-        if conn:
-            try:
-                conn.rollback()
-                print(f"[INSERT-LEAD] Rollback executed")
-            except Exception as rb_error:
-                print(f"[INSERT-LEAD] Rollback failed: {rb_error}")
-        return False
+        error_msg = f"An unexpected error occurred: {e}"
+        print(f"[INSERT-LEAD] ERROR: {error_msg}")
+        if conn: conn.rollback()
+        return False, error_msg
     finally:
         if conn and conn.is_connected():
             conn.close()

@@ -126,9 +126,9 @@ const LeadDetail = () => {
             <div>
               <h1 className="text-4xl font-bold text-white mb-2 flex items-center">
                 <span className="w-2 h-10 bg-gradient-to-b from-blue-400 to-purple-400 rounded mr-3"></span>
-                {lead.name}
+                {lead.company || 'Unknown Company'}
               </h1>
-              <p className="text-slate-300 text-lg">{lead.company}</p>
+              <p className="text-slate-300 text-lg">{lead.website || 'No website'}</p>
             </div>
             <span className={`px-4 py-2 rounded-lg text-sm font-semibold ${
               lead.status === 'new' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' :

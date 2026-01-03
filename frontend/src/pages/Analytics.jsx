@@ -169,8 +169,8 @@ const Analytics = () => {
             {leads.slice(0, 10).map((lead) => (
               <div key={lead.id} className="flex items-center justify-between p-4 bg-slate-700/30 rounded-lg hover:bg-slate-700/50 transition-colors border border-slate-700">
                 <div>
-                  <span className="font-bold text-white">{lead.name}</span>
-                  <span className="text-slate-400 ml-2 text-sm">from {lead.company}</span>
+                  <span className="font-bold text-white">{lead.company}</span>
+                  <span className="text-slate-400 ml-2 text-sm">{lead.email}</span>
                 </div>
                 <div className="flex items-center space-x-3">
                   <span className={`px-3 py-1 text-xs font-bold rounded-full border ${

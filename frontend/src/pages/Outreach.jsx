@@ -186,9 +186,8 @@ const Outreach = () => {
                       className="w-4 h-4 text-blue-500 rounded mt-1 cursor-pointer"
                     />
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-white truncate">{lead.name}</p>
+                      <p className="font-semibold text-white truncate">{lead.company || 'Unknown Company'}</p>
                       <p className="text-sm text-slate-300 truncate">{lead.email}</p>
-                      <p className="text-xs text-slate-400">{lead.company}</p>
                     </div>
                     <span className="text-xs font-semibold text-blue-300 ml-auto flex-shrink-0 bg-blue-500/20 px-2 py-1 rounded">
                       {lead.status}

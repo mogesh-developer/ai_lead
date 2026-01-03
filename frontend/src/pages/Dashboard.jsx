@@ -185,28 +185,36 @@ const Dashboard = () => {
               <table className="w-full">
                 <thead>
                   <tr className="bg-slate-700/50 border-b border-slate-600">
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Name</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Email</th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Company</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Website</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Email</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Phone</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Location</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Confidence</th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-600">
                   {leads.map((lead, idx) => (
                     <tr key={idx} className="hover:bg-slate-700/50 transition-colors">
-                      <td className="px-6 py-4 text-sm text-white font-semibold">{lead.name || 'N/A'}</td>
+                      <td className="px-6 py-4 text-sm text-white font-semibold">{lead.company || 'N/A'}</td>
+                      <td className="px-6 py-4 text-sm text-slate-300">
+                        {lead.website ? (
+                          <a href={lead.website.startsWith('http') ? lead.website : `https://${lead.website}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+                            {lead.website.replace('https://', '').replace('http://', '').replace('www.', '').split('/')[0]}
+                          </a>
+                        ) : 'N/A'}
+                      </td>
                       <td className="px-6 py-4 text-sm text-slate-300">{lead.email || 'N/A'}</td>
-                      <td className="px-6 py-4 text-sm text-slate-300">{lead.company || 'N/A'}</td>
+                      <td className="px-6 py-4 text-sm text-slate-300">{lead.phone || 'N/A'}</td>
+                      <td className="px-6 py-4 text-sm text-slate-300">{lead.location || 'N/A'}</td>
                       <td className="px-6 py-4 text-sm">
                         <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                          lead.status === 'converted' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
-                          lead.status === 'contacted' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' :
-                          lead.status === 'analyzed' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' :
-                          lead.status === 'outreach_sent' ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30' :
+                          (lead.confidence || lead.trust_score) >= 80 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+                          (lead.confidence || lead.trust_score) >= 50 ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' :
                           'bg-slate-600/50 text-slate-200 border border-slate-600'
                         }`}>
-                          {lead.status ? lead.status.replace('_', ' ') : 'pending'}
+                          {lead.confidence || lead.trust_score || 0}%
                         </span>
                       </td>
                       <td className="px-6 py-4 text-sm">
@@ -226,6 +234,7 @@ const Dashboard = () => {
             )}
           </div>
         </div>
+        </main>
     </div>
   );
 };

@@ -83,7 +83,7 @@ const DomainSearch = () => {
                 <tbody>
                   {results.map((lead, index) => (
                     <tr key={index} className="border-b border-slate-700 hover:bg-slate-700/30 transition-colors">
-                      <td className="px-6 py-4 text-sm text-white font-medium">{lead.name || 'N/A'}</td>
+                      <td className="px-6 py-4 text-sm text-white font-medium">{lead.company || 'N/A'}</td>
                       <td className="px-6 py-4 text-sm text-blue-400">{lead.email}</td>
                       <td className="px-6 py-4 text-sm text-slate-300">{lead.position || 'N/A'}</td>
                     </tr>

@@ -70,12 +70,12 @@ if lead_list:
         test_lead = lead_list[0]
         payload = {
             "lead_id": test_lead['id'],
-            "message": f"Hi {test_lead['name']},\n\nThis is a test outreach message.\n\nBest regards",
-            "subject": f"Test message for {test_lead['company']}",
+            "message": f"Hi,\n\nThis is a test outreach message for {test_lead.get('company', 'your company')}.\n\nBest regards",
+            "subject": f"Test message for {test_lead.get('company', 'your company')}",
             "message_type": "email"
         }
         
-        print(f"   Sending to: {test_lead['name']} ({test_lead['email']})")
+        print(f"   Sending to: {test_lead.get('company', 'Unknown')} ({test_lead['email']})")
         print(f"   Payload: {json.dumps(payload, indent=2)}")
         
         response = client.post(

@@ -444,17 +444,20 @@ const WebSearch = () => {
                       <th className="px-4 py-3 text-left font-semibold text-slate-200">Website</th>
                       <th className="px-4 py-3 text-left font-semibold text-slate-200">Email</th>
                       <th className="px-4 py-3 text-left font-semibold text-slate-200">Phone</th>
+                      <th className="px-4 py-3 text-left font-semibold text-slate-200">Location</th>
                       <th className="px-4 py-3 text-left font-semibold text-slate-200">Confidence</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-700">
                     {extractedLeads.map((lead, i) => (
                       <tr key={i} className="hover:bg-slate-700/30 transition-colors">
-                        <td className="px-4 py-3 font-medium text-white">{lead.company_name || lead.company}</td>
+                        <td className="px-4 py-3 font-medium text-white">{lead.company_name || lead.company || 'N/A'}</td>
                         <td className="px-4 py-3 text-blue-400 truncate max-w-xs">
-                          <a href={lead.official_website || lead.website} target="_blank" rel="noopener noreferrer" className="hover:text-blue-300">
-                            {lead.official_website || lead.website}
-                          </a>
+                          {lead.official_website || lead.website ? (
+                            <a href={(lead.official_website || lead.website).startsWith('http') ? (lead.official_website || lead.website) : `https://${lead.official_website || lead.website}`} target="_blank" rel="noopener noreferrer" className="hover:text-blue-300">
+                              {lead.official_website || lead.website}
+                            </a>
+                          ) : 'N/A'}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center space-x-2">
@@ -475,13 +478,14 @@ const WebSearch = () => {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-slate-300">{lead.phone_number || lead.phone || 'N/A'}</td>
+                        <td className="px-4 py-3 text-slate-300">{lead.full_address || lead.location || lead.city || 'N/A'}</td>
                         <td className="px-4 py-3">
                           <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                            lead.confidence_score === 'High' ? 'bg-green-500/20 text-green-300' : 
-                            lead.confidence_score === 'Medium' ? 'bg-yellow-500/20 text-yellow-300' : 
+                            (lead.confidence_score === 'High' || lead.confidence >= 80) ? 'bg-green-500/20 text-green-300' : 
+                            (lead.confidence_score === 'Medium' || lead.confidence >= 50) ? 'bg-yellow-500/20 text-yellow-300' : 
                             'bg-red-500/20 text-red-300'
                           }`}>
-                            {lead.confidence_score || 'N/A'}
+                            {lead.confidence_score || (lead.confidence ? `${lead.confidence}%` : 'N/A')}
                           </span>
                         </td>
                       </tr>
