@@ -1,5 +1,5 @@
-import mysql.connector
-from mysql.connector import Error
+import pymysql
+from pymysql import Error
 import os
 import json
 from dotenv import load_dotenv
@@ -9,14 +9,16 @@ load_dotenv()
 def get_db_connection():
     """Establishes a connection to the MySQL database."""
     try:
-        connection = mysql.connector.connect(
+        connection = pymysql.connect(
             host=os.getenv('DB_HOST', 'localhost'),
             user=os.getenv('DB_USER', 'root'),
             password=os.getenv('DB_PASSWORD', ''),
-            database=os.getenv('DB_NAME', 'ai_lead_outreach')
+            database=os.getenv('DB_NAME', 'ai_lead_outreach'),
+            charset='utf8mb4',
+            cursorclass=pymysql.cursors.DictCursor,
+            autocommit=True
         )
-        if connection.is_connected():
-            return connection
+        return connection
     except Error as e:
         print(f"Error connecting to MySQL: {e}")
         return None
@@ -197,7 +199,7 @@ def insert_lead(data):
         if conn: conn.rollback()
         return False, error_msg
     finally:
-        if conn and conn.is_connected():
+        if conn:
             conn.close()
 
 def get_setting(key):
@@ -227,7 +229,7 @@ def get_pending_leads():
     conn = get_db_connection()
     leads = []
     if conn:
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor()
         # Get 'new' leads for analysis OR 'analyzed' leads with high score for outreach
         cursor.execute("SELECT * FROM leads WHERE status = 'new' OR (status = 'analyzed' AND trust_score > 60)")
         leads = cursor.fetchall()
@@ -240,7 +242,7 @@ def get_all_leads():
     conn = get_db_connection()
     leads = []
     if conn:
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor()
         cursor.execute("SELECT * FROM leads ORDER BY created_at DESC")
         leads = cursor.fetchall()
         for lead in leads:
@@ -254,7 +256,7 @@ def get_lead_by_id(lead_id):
     conn = get_db_connection()
     lead = None
     if conn:
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor()
         cursor.execute("SELECT * FROM leads WHERE id = %s", (lead_id,))
         lead = cursor.fetchone()
         if lead and lead.get('ai_analysis'):
@@ -267,7 +269,7 @@ def get_lead_by_email(email):
     conn = get_db_connection()
     lead = None
     if conn:
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor()
         cursor.execute("SELECT * FROM leads WHERE email = %s", (email,))
         lead = cursor.fetchone()
         cursor.close()

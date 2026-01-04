@@ -31,10 +31,11 @@ except ImportError:
 # Import database module (kept separate as requested)
 try:
     import db
-    db.init_db()
-    print("[OK] Database initialized")
+    # Skip db init on startup to avoid MySQL connector issues
+    # db.init_db()
+    print("[OK] Database module loaded")
 except Exception as e:
-    print(f"[WARN] Database initialization warning: {e}")
+    print(f"[WARN] Database module warning: {e}")
 
 # =================================================================
 # CONFIGURATION & INITIALIZATION
@@ -191,7 +192,8 @@ def send_email_smtp(to_email, subject, body, lead_name=None):
         msg['From'] = f"Lead Outreach AI <{SMTP_EMAIL}>"
         msg['To'] = to_email
         msg['Subject'] = subject
-        html = f"<html><body><p>{body.replace('\\n', '<br>')}</p></body></html>"
+        html_body = body.replace('\n', '<br>')
+        html = f"<html><body><p>{html_body}</p></body></html>"
         msg.attach(MIMEText(body, 'plain'))
         msg.attach(MIMEText(html, 'html'))
         
@@ -473,7 +475,7 @@ def manage_leads():
         search = request.args.get('search')
         
         conn = db.get_db_connection()
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor()
         
         query = "SELECT * FROM leads WHERE 1=1"
         params = []
@@ -502,6 +504,60 @@ def get_lead(lead_id):
     for k, v in lead.items():
         if hasattr(v, 'isoformat'): lead[k] = v.isoformat()
     return jsonify(lead)
+
+@api.route('/select-leads-for-outreach', methods=['GET'])
+def select_leads_for_outreach():
+    """Get leads that can be contacted (filtered list)
+    
+    Query parameters:
+    - status: Filter by status (optional)
+    - min_trust_score: Minimum trust score (optional)
+    - limit: Maximum results (default 50)
+    """
+    try:
+        status = request.args.get('status', None)
+        min_trust = request.args.get('min_trust_score', 0, type=int)
+        limit = request.args.get('limit', 50, type=int)
+        
+        conn = db.get_db_connection()
+        if not conn:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        cursor = conn.cursor()
+        
+        # Build query
+        query = "SELECT id, email, company, phone, status, trust_score FROM leads WHERE 1=1"
+        params = []
+        
+        if status:
+            query += " AND status = %s"
+            params.append(status)
+        
+        if min_trust > 0:
+            query += " AND trust_score >= %s"
+            params.append(min_trust)
+        
+        query += " ORDER BY created_at DESC LIMIT %s" % limit
+        
+        cursor.execute(query, params)
+        leads = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            "leads": leads,
+            "count": len(leads),
+            "filters": {
+                "status": status,
+                "min_trust_score": min_trust,
+                "limit": limit
+            }
+        })
+        
+    except Exception as e:
+        print(f"Error selecting leads: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @api.route('/export-sheets', methods=['POST'])
 def export_sheets():
