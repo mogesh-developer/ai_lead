@@ -47,7 +47,13 @@ def init_db():
             notes TEXT,
             campaign_id INT,
             current_sequence_step INT DEFAULT 1,
-            last_outreach_at TIMESTAMP NULL
+            last_outreach_at TIMESTAMP NULL,
+            opened BOOLEAN DEFAULT FALSE,
+            opened_at TIMESTAMP NULL,
+            replied BOOLEAN DEFAULT FALSE,
+            replied_at TIMESTAMP NULL,
+            reply_subject VARCHAR(255),
+            reply_body TEXT
         )
         """)
 
@@ -62,6 +68,12 @@ def init_db():
             ("notes", "TEXT"),
             ("ai_analysis", "JSON"),
             ("source", "VARCHAR(50) DEFAULT 'upload'"),
+            ("opened", "BOOLEAN DEFAULT FALSE"),
+            ("opened_at", "TIMESTAMP NULL"),
+            ("replied", "BOOLEAN DEFAULT FALSE"),
+            ("replied_at", "TIMESTAMP NULL"),
+            ("reply_subject", "VARCHAR(255)"),
+            ("reply_body", "TEXT"),
             ("campaign_id", "INT"),
             ("current_sequence_step", "INT DEFAULT 1"),
             ("last_outreach_at", "TIMESTAMP NULL")
@@ -89,7 +101,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS outreach_logs (
             id INT AUTO_INCREMENT PRIMARY KEY,
             lead_id INT,
-            type ENUM('email', 'whatsapp'),
+            type VARCHAR(30),
             message TEXT,
             sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             response TEXT,
@@ -135,7 +147,10 @@ def insert_lead(data):
             'notes': ['notes', 'description', 'comments'],
             'ai_analysis': ['ai_analysis', 'analysis', 'summary'],
             'trust_score': ['trust_score', 'score'],
-            'source': ['source', 'origin']
+            'source': ['source', 'origin'],
+            'opened': ['opened'],
+            'replied': ['replied'],
+            'reply_subject': ['reply_subject']
         }
         
         db_data = {}
@@ -296,20 +311,51 @@ def update_lead_analysis(lead_id, analysis_json, trust_score, status):
         cursor.close()
         conn.close()
 
-def log_outreach(lead_id, outreach_type, message):
+def log_outreach(lead_id, outreach_type, message, update_status=True):
     conn = get_db_connection()
     if conn:
         cursor = conn.cursor()
         sql = "INSERT INTO outreach_logs (lead_id, type, message) VALUES (%s, %s, %s)"
         cursor.execute(sql, (lead_id, outreach_type, message))
         
-        # Update lead status
-        update_sql = "UPDATE leads SET status = 'outreach_sent' WHERE id = %s"
-        cursor.execute(update_sql, (lead_id,))
+        # Update lead status when this is an actual outreach send
+        if update_status and outreach_type in ('email', 'whatsapp'):
+            update_sql = "UPDATE leads SET status = 'outreach_sent' WHERE id = %s"
+            cursor.execute(update_sql, (lead_id,))
         
         conn.commit()
         cursor.close()
         conn.close()
+
+
+def mark_lead_opened(lead_id):
+    conn = get_db_connection()
+    if not conn:
+        return False
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE leads SET opened = TRUE, opened_at = COALESCE(opened_at, NOW()) WHERE id = %s",
+        (lead_id,)
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return True
+
+
+def mark_lead_replied(lead_id, subject=None, body=None):
+    conn = get_db_connection()
+    if not conn:
+        return False
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE leads SET replied = TRUE, replied_at = NOW(), reply_subject = %s, reply_body = %s, status = 'replied' WHERE id = %s",
+        (subject, body, lead_id)
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return True
 
 def get_dashboard_stats():
     conn = get_db_connection()
@@ -325,3 +371,83 @@ def get_dashboard_stats():
         cursor.close()
         conn.close()
     return stats
+
+
+def get_follow_up_candidates(days_delay=2):
+    conn = get_db_connection()
+    leads = []
+    if conn:
+        cursor = conn.cursor()
+                query = """
+                SELECT * FROM leads
+                WHERE (status = 'outreach_sent' OR status = 'followup_sent')
+                    AND replied = FALSE
+                    AND (last_outreach_at IS NULL OR last_outreach_at <= DATE_SUB(NOW(), INTERVAL %s DAY))
+                ORDER BY last_outreach_at ASC
+                LIMIT 100
+                """
+        cursor.execute(query, (days_delay,))
+        leads = cursor.fetchall()
+        for lead in leads:
+            if lead.get('ai_analysis'):
+                try:
+                    lead['ai_analysis'] = json.loads(lead['ai_analysis'])
+                except Exception:
+                    pass
+        cursor.close()
+        conn.close()
+    return leads
+
+
+def get_auto_follow_up_candidates(days_delay=2, max_step=4):
+    conn = get_db_connection()
+    leads = []
+    if conn:
+        cursor = conn.cursor()
+        query = """
+        SELECT * FROM leads
+        WHERE opened = TRUE
+          AND replied = FALSE
+          AND current_sequence_step < %s
+          AND (last_outreach_at IS NULL OR last_outreach_at <= DATE_SUB(NOW(), INTERVAL %s DAY))
+          AND status IN ('outreach_sent', 'followup_sent', 'analyzed')
+        ORDER BY COALESCE(last_outreach_at, NOW()) ASC
+        LIMIT 50
+        """
+        cursor.execute(query, (max_step, days_delay))
+        leads = cursor.fetchall()
+        for lead in leads:
+            if lead.get('ai_analysis'):
+                try:
+                    lead['ai_analysis'] = json.loads(lead['ai_analysis'])
+                except Exception:
+                    pass
+        cursor.close()
+        conn.close()
+    return leads
+
+
+def get_replied_leads(limit=100):
+    conn = get_db_connection()
+    leads = []
+    if conn:
+        cursor = conn.cursor()
+        query = """
+        SELECT id, company, email, phone, status, trust_score, opened, replied, opened_at,
+               replied_at, reply_subject, last_outreach_at
+        FROM leads
+        WHERE replied = TRUE
+        ORDER BY replied_at DESC
+        LIMIT %s
+        """
+        cursor.execute(query, (limit,))
+        leads = cursor.fetchall()
+        for lead in leads:
+            if lead.get('ai_analysis'):
+                try:
+                    lead['ai_analysis'] = json.loads(lead['ai_analysis'])
+                except Exception:
+                    pass
+        cursor.close()
+        conn.close()
+    return leads

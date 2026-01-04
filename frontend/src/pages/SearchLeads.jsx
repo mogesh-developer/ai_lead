@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import api from '../api';
-import { useNavigate } from 'react-router-dom';
 
 const SearchLeads = () => {
   const [industry, setIndustry] = useState('');
@@ -10,22 +9,24 @@ const SearchLeads = () => {
   const [activeTab, setActiveTab] = useState('search'); // 'search', 'scrape', or 'keyword'
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState(null);
-  const navigate = useNavigate();
+  const [message, setMessage] = useState('');
+  const [lastAction, setLastAction] = useState('search');
+  const [saving, setSaving] = useState(false);
 
   const handleSearch = async (e) => {
     e.preventDefault();
     setLoading(true);
     setResults(null);
+    setMessage('');
     try {
       const response = await api.post('/search-leads', { industry, location });
       setResults(response.data);
+      setLastAction('search');
+      setMessage(response.data.message || `Found ${response.data.count || 0} leads`);
       console.log('Search results:', response.data);
-      // Navigate to leads page to show the newly found leads
-      if (response.data.leads && response.data.leads.length > 0) {
-        navigate('/leads');
-      }
     } catch (error) {
-      console.error("Search failed", error);
+      console.error('Search failed', error);
+      setMessage(error.response?.data?.error || 'Discovery failed.');
     } finally {
       setLoading(false);
     }
@@ -35,11 +36,15 @@ const SearchLeads = () => {
     e.preventDefault();
     setLoading(true);
     setResults(null);
+    setMessage('');
     try {
       const response = await api.post('/scrape-url', { url });
       setResults(response.data);
+      setLastAction('scrape');
+      setMessage(response.data.message || `Scraped ${response.data.count || 0} items.`);
     } catch (error) {
-      console.error("Scrape failed", error);
+      console.error('Scrape failed', error);
+      setMessage(error.response?.data?.error || 'Scrape failed.');
     } finally {
       setLoading(false);
     }
@@ -49,13 +54,31 @@ const SearchLeads = () => {
     e.preventDefault();
     setLoading(true);
     setResults(null);
+    setMessage('');
     try {
       const response = await api.post('/keyword-search', { keywords });
       setResults(response.data);
+      setLastAction('keyword');
+      setMessage(response.data.message || `Checked ${response.data.total_keywords || 0} keywords`);
     } catch (error) {
-      console.error("Keyword search failed", error);
+      console.error('Keyword search failed', error);
+      setMessage(error.response?.data?.error || 'Keyword search failed.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveLeads = async (leads) => {
+    if (!leads || leads.length === 0) return;
+    setSaving(true);
+    try {
+      const res = await api.post('/save-domain-leads', { leads });
+      setMessage(res.data.message || `Saved ${res.data.count || leads.length} leads.`);
+    } catch (error) {
+      console.error('Saving leads failed', error);
+      setMessage(error.response?.data?.error || 'Save failed.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -189,12 +212,120 @@ const SearchLeads = () => {
               </form>
             )}
 
-            {results && (
-              <div className="mt-8 p-6 bg-slate-700/50 rounded-xl border border-slate-600">
-                <h3 className="text-xl font-bold text-white mb-4">📊 Search Results</h3>
-                <pre className="text-slate-300 text-sm overflow-auto max-h-60 bg-slate-900 p-4 rounded border border-slate-700 font-mono">
-                  {JSON.stringify(results, null, 2)}
-                </pre>
+            {message && (
+              <div className="mt-6 px-4 py-3 rounded-lg text-sm border text-slate-100 bg-slate-900/60 border-slate-700">
+                {message}
+              </div>
+            )}
+
+            {lastAction === 'search' && results?.leads?.length > 0 && (
+              <div className="mt-8 bg-slate-800 border border-slate-700 rounded-xl shadow-xl overflow-hidden">
+                <div className="p-6 border-b border-slate-700 flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="text-2xl font-bold text-white">🤖 AI Discovery ({results.count || results.leads.length})</h3>
+                  <button
+                    onClick={() => handleSaveLeads(results.leads)}
+                    disabled={saving}
+                    className="text-sm bg-green-600 hover:bg-green-700 disabled:bg-slate-600 text-white px-4 py-2 rounded-lg transition-colors"
+                  >
+                    {saving ? 'Saving...' : 'Save Leads'}
+                  </button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-700/50 border-b border-slate-700">
+                        <th className="px-4 py-3 text-left font-semibold text-slate-200">Company</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-200">Email</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-200">Position</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-200">Source</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700">
+                      {results.leads.map((lead, index) => (
+                        <tr key={index} className="hover:bg-slate-700/30 transition-colors">
+                          <td className="px-4 py-3 font-medium text-white">{lead.company || 'N/A'}</td>
+                          <td className="px-4 py-3 text-blue-400">{lead.email}</td>
+                          <td className="px-4 py-3 text-slate-300">{lead.position || 'N/A'}</td>
+                          <td className="px-4 py-3 text-slate-300">{lead.source || 'AI search'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {lastAction === 'scrape' && results && (
+              <div className="mt-8 bg-slate-800 border border-slate-700 rounded-xl shadow-xl p-6 space-y-4">
+                <div className="flex flex-wrap items-center gap-3 justify-between">
+                  <div>
+                    <h3 className="text-2xl font-bold text-white">🌐 Web Scraper</h3>
+                    <p className="text-sm text-slate-400">{results.url}</p>
+                  </div>
+                  <button
+                    onClick={() => handleSaveLeads(results.leads)}
+                    disabled={saving || !results.leads?.length}
+                    className="text-sm bg-green-600 hover:bg-green-700 disabled:bg-slate-600 text-white px-4 py-2 rounded-lg transition-colors"
+                  >
+                    {saving ? 'Saving...' : 'Save Scraped Leads'}
+                  </button>
+                </div>
+                <div className="grid lg:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-slate-300">Emails ({results.emails?.length || 0})</p>
+                    <ul className="text-slate-200 text-sm space-y-1 max-h-48 overflow-auto">
+                      {results.emails?.length > 0 ? (
+                        results.emails.map((email, index) => (
+                          <li key={index} className="truncate font-mono">{email}</li>
+                        ))
+                      ) : (
+                        <li className="text-slate-500">No emails found</li>
+                      )}
+                    </ul>
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-300">Phones ({results.phones?.length || 0})</p>
+                    <ul className="text-slate-200 text-sm space-y-1 max-h-48 overflow-auto">
+                      {results.phones?.length > 0 ? (
+                        results.phones.map((phone, index) => (
+                          <li key={index} className="truncate font-mono">{phone}</li>
+                        ))
+                      ) : (
+                        <li className="text-slate-500">No phone numbers found</li>
+                      )}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {lastAction === 'keyword' && results && (
+              <div className="mt-8 bg-slate-800 border border-slate-700 rounded-xl shadow-xl p-6 space-y-6">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-2xl font-bold text-white">🔎 Keyword Search</h3>
+                  <span className="text-sm text-slate-400">Total leads: {results.total_leads || 0}</span>
+                </div>
+                <div className="space-y-4">
+                  {results.keywords?.map((entry, idx) => (
+                    <div key={idx} className="p-4 bg-slate-900/80 rounded-lg border border-slate-700">
+                      <div className="flex flex-wrap justify-between items-center gap-2">
+                        <div>
+                          <p className="text-sm text-slate-400">Keyword</p>
+                          <p className="text-lg font-semibold text-white">{entry.keyword}</p>
+                          <p className="text-xs text-slate-500">Query: {entry.query}</p>
+                        </div>
+                        <button
+                          onClick={() => handleSaveLeads(entry.leads)}
+                          disabled={saving || !entry.leads?.length}
+                          className="text-sm bg-green-600 hover:bg-green-700 disabled:bg-slate-600 text-white px-4 py-2 rounded-lg transition-colors"
+                        >
+                          {saving ? 'Saving...' : 'Save Leads'}
+                        </button>
+                      </div>
+                      <p className="text-sm text-slate-300">Leads: {entry.count}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>

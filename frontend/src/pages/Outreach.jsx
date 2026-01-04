@@ -1,43 +1,138 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import api from '../api';
+
+const DEFAULT_TEMPLATES = {
+  introduction: {
+    name: 'Introduction',
+    subject: 'Quick intro to {company}',
+    message:
+      "Hi {name},\n\nI spotted {company} while researching companies in {location} and wanted to share how {product} keeps teams focused on their pipeline.\n\nWould a quick 10-minute call later this week make sense?\n\nBest,\nAI Lead Outreach",
+  },
+  value_add: {
+    name: 'Value Add',
+    subject: 'A free resource for {company}',
+    message:
+      "Hi {name},\n\nRather than another cold intro, I wanted to send over a short playbook showing how {company} can capture more qualified meetings with the leads you already have.\n\nIf this makes sense, I can share the deck and map it to your current process.\n\nCheers,\nAI Lead Outreach",
+  },
+  case_study: {
+    name: 'Case Study',
+    subject: 'How we helped a {location} team win more deals',
+    message:
+      "Hi {name},\n\nWe recently helped another {location} team similar to {company} double their responses by layering in personalized AI follow-ups.\n\nHappy to show you how it works on a 15-minute screen share.\n\nLet me know when you have time,\nAI Lead Outreach",
+  },
+};
 
 const Outreach = () => {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedLeads, setSelectedLeads] = useState([]);
-  const [templates, setTemplates] = useState({});
-  const [selectedTemplate, setSelectedTemplate] = useState('introduction');
+  const [templates, setTemplates] = useState(DEFAULT_TEMPLATES);
+  const [selectedTemplate, setSelectedTemplate] = useState(
+    Object.keys(DEFAULT_TEMPLATES)[0]
+  );
   const [customMessage, setCustomMessage] = useState('');
   const [customSubject, setCustomSubject] = useState('');
   const [useCustom, setUseCustom] = useState(false);
   const [sending, setSending] = useState(false);
   const [status, setStatus] = useState(null);
   const [filter, setFilter] = useState('new');
+  const [followUpQueue, setFollowUpQueue] = useState([]);
+  const [followUpLoading, setFollowUpLoading] = useState(true);
+  const [followUpStatus, setFollowUpStatus] = useState(null);
+  const [activeFollowUp, setActiveFollowUp] = useState(null);
+  const [apiError, setApiError] = useState(null);
+  const [repliedLeads, setRepliedLeads] = useState([]);
 
-  useEffect(() => {
-    fetchLeads();
-    fetchTemplates();
-  }, [filter]);
-
-  const fetchLeads = async () => {
+  const fetchLeads = useCallback(async () => {
     try {
       setLoading(true);
+      setApiError(null);
       const res = await api.get(`/select-leads-for-outreach?status=${filter || 'new'}&limit=100`);
       setLeads(res.data.leads || []);
     } catch (error) {
       console.error('Error fetching leads:', error);
+      const msg = error?.response ? `API error ${error.response.status}` : (error.message || 'Network error');
+      setApiError(`Failed to fetch leads: ${msg}`);
       setStatus({ type: 'error', message: 'Failed to fetch leads' });
     } finally {
       setLoading(false);
     }
-  };
+  }, [filter]);
 
-  const fetchTemplates = async () => {
+  const fetchTemplates = useCallback(async () => {
     try {
+      setApiError(null);
       const res = await api.get('/outreach-templates');
-      setTemplates(res.data.templates || {});
+      const fromApi = res.data.templates || {};
+      if (Object.keys(fromApi).length) {
+        setTemplates(fromApi);
+        setSelectedTemplate(prev => (fromApi[prev] ? prev : Object.keys(fromApi)[0] || prev));
+      }
     } catch (error) {
       console.error('Error fetching templates:', error);
+      const msg = error?.response ? `API error ${error.response.status}` : (error.message || 'Network error');
+      setApiError(`Failed to fetch templates: ${msg}`);
+    }
+  }, []);
+
+  const fetchRepliedLeads = useCallback(async () => {
+    try {
+      const res = await api.get('/replied-leads?limit=100');
+      setRepliedLeads(res.data.leads || []);
+    } catch (error) {
+      console.error('Error fetching replied leads:', error);
+    }
+  }, []);
+
+  const fetchFollowUpQueue = useCallback(async () => {
+    setFollowUpLoading(true);
+    try {
+      setApiError(null);
+      const res = await api.get('/follow-up-queue?days=2');
+      setFollowUpQueue(res.data.leads || []);
+    } catch (error) {
+      console.error('Error fetching follow-up queue:', error);
+      const msg = error?.response ? `API error ${error.response.status}` : (error.message || 'Network error');
+      setApiError(`Failed to fetch follow-up queue: ${msg}`);
+    } finally {
+      setFollowUpLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLeads();
+    fetchTemplates();
+    fetchFollowUpQueue();
+    fetchRepliedLeads();
+  }, [filter, fetchLeads, fetchTemplates, fetchFollowUpQueue, fetchRepliedLeads]);
+
+  useEffect(() => {
+    const refreshInterval = setInterval(() => {
+      fetchLeads();
+      fetchFollowUpQueue();
+      fetchRepliedLeads();
+    }, 30000);
+
+    return () => clearInterval(refreshInterval);
+  }, [fetchLeads, fetchFollowUpQueue, fetchRepliedLeads]);
+
+  const sendFollowUp = async (leadId, templateKey) => {
+    if (!leadId) return;
+    setActiveFollowUp(leadId);
+    setFollowUpStatus(null);
+    try {
+      await api.post('/follow-up-lead', { lead_id: leadId, template: templateKey });
+      setFollowUpStatus({ type: 'success', message: 'Follow-up sent. It will ping the lead again soon.' });
+      fetchFollowUpQueue();
+      fetchLeads();
+    } catch (error) {
+      console.error('Error sending follow-up:', error);
+      setFollowUpStatus({
+        type: 'error',
+        message: error.response?.data?.error || 'Failed to send follow-up'
+      });
+    } finally {
+      setActiveFollowUp(null);
     }
   };
 
@@ -109,7 +204,7 @@ const Outreach = () => {
   const currentTemplate = templates[selectedTemplate] || {};
 
   return (
-    <div className="w-full h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white overflow-hidden flex flex-col">
+    <div className="w-full min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white overflow-y-auto flex flex-col">
       {/* Header Section */}
       <div className="bg-gradient-to-r from-slate-800 to-slate-900 border-b border-slate-700 px-8 py-6">
         <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
@@ -128,6 +223,25 @@ const Outreach = () => {
           }`}
         >
           {status.message}
+        </div>
+      )}
+
+      {apiError && (
+        <div className="mx-8 mt-4 p-4 rounded-lg border bg-yellow-900/30 text-yellow-200 border-yellow-700 flex items-center justify-between">
+          <div className="text-sm">{apiError}</div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setApiError(null);
+                fetchLeads();
+                fetchFollowUpQueue();
+                fetchTemplates();
+              }}
+              className="px-3 py-1 rounded bg-yellow-700 text-yellow-100 text-sm"
+            >
+              Retry
+            </button>
+          </div>
         </div>
       )}
 
@@ -188,6 +302,18 @@ const Outreach = () => {
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-white truncate">{lead.company || 'Unknown Company'}</p>
                       <p className="text-sm text-slate-300 truncate">{lead.email}</p>
+                      <div className="flex items-center gap-2 mt-1 text-[10px] font-semibold text-slate-200">
+                        {lead.opened && (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-500/40">
+                            Opened
+                          </span>
+                        )}
+                        {lead.replied && (
+                          <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-200 border border-blue-500/40">
+                            Replied
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <span className="text-xs font-semibold text-blue-300 ml-auto flex-shrink-0 bg-blue-500/20 px-2 py-1 rounded">
                       {lead.status}
@@ -285,6 +411,111 @@ const Outreach = () => {
               )}
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Follow-up Queue */}
+      <div className="px-8 pb-8">
+        <div className="bg-slate-900/60 border border-slate-700 rounded-2xl p-6 space-y-4 shadow-xl">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm uppercase tracking-wider text-slate-400">Follow-up Queue</p>
+              <h3 className="text-2xl font-semibold text-white">Stay on message with replies</h3>
+            </div>
+            <button
+              onClick={() => {
+                fetchFollowUpQueue();
+                fetchRepliedLeads();
+              }}
+              className="text-xs font-semibold uppercase tracking-wider px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-slate-200 hover:border-blue-500 hover:text-white transition"
+            >
+              Refresh
+            </button>
+          </div>
+
+          {followUpStatus && (
+            <div
+              className={`p-3 rounded-lg border text-sm ${
+                followUpStatus.type === 'success'
+                  ? 'border-green-500 bg-green-500/20 text-green-200'
+                  : 'border-red-500 bg-red-500/20 text-red-200'
+              }`}
+            >
+              {followUpStatus.message}
+            </div>
+          )}
+
+          {followUpLoading ? (
+            <div className="text-sm text-slate-400 py-6 text-center">Loading follow-up candidates…</div>
+          ) : followUpQueue.length === 0 ? (
+            <div className="text-sm text-slate-400 py-6 text-center">No leads need a follow-up right now.</div>
+          ) : (
+            <div className="grid gap-3 max-h-56 overflow-y-auto">
+              {followUpQueue.map(lead => (
+                <div key={lead.id} className="flex items-center justify-between gap-4 bg-slate-800/60 border border-slate-700 rounded-xl p-3">
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <p className="text-sm font-semibold text-white truncate">{lead.company || lead.email}</p>
+                    <p className="text-xs text-slate-400 truncate">{lead.email}</p>
+                    <p className="text-[11px] text-slate-400">Next: {lead.template_name} · Step {lead.next_step}</p>
+                      {lead.replied && lead.reply_subject && (
+                        <p className="text-[11px] text-slate-400">Reply subject: {lead.reply_subject}</p>
+                      )}
+                    <p className="text-[11px] text-slate-500">Last outreach: {lead.last_outreach_at ? new Date(lead.last_outreach_at).toLocaleString() : 'not yet set'}</p>
+                  </div>
+                  <button
+                    onClick={() => sendFollowUp(lead.id, lead.template_key)}
+                    disabled={lead.replied || activeFollowUp === lead.id}
+                    className="text-xs font-semibold px-3 py-1 rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 text-white hover:from-blue-700 hover:to-blue-600 disabled:from-slate-500 disabled:to-slate-500 disabled:cursor-not-allowed"
+                  >
+                    {lead.replied ? 'Already replied' : activeFollowUp === lead.id ? 'Sending…' : `Send ${lead.template_name}`}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Replied Leads */}
+      <div className="px-8 pb-12">
+        <div className="bg-slate-900/50 border border-slate-700 rounded-2xl p-6 space-y-4 shadow-2xl">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm uppercase tracking-wider text-slate-400">Replied Leads</p>
+              <h3 className="text-2xl font-semibold text-white">Responses we received</h3>
+            </div>
+            <span className="text-xs font-semibold uppercase tracking-wider text-emerald-300">
+              {repliedLeads.length} replied
+            </span>
+          </div>
+
+          {repliedLeads.length === 0 ? (
+            <div className="text-sm text-slate-400 text-center py-6">
+              Replies will appear here after the lead replies to your outreach.
+            </div>
+          ) : (
+            <div className="grid gap-3 max-h-64 overflow-y-auto">
+              {repliedLeads.map(lead => (
+                <div key={lead.id} className="p-4 border border-slate-700 rounded-2xl bg-slate-800/60">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-white truncate">{lead.company || lead.email}</p>
+                      <p className="text-xs text-slate-400 truncate">{lead.email}</p>
+                    </div>
+                    <span className="text-[11px] font-semibold text-emerald-200 bg-emerald-500/10 px-2 py-1 rounded-full border border-emerald-500/30">
+                      Replied
+                    </span>
+                  </div>
+                  {lead.reply_subject && (
+                    <p className="text-[12px] text-slate-300 mt-2 truncate">Subject: {lead.reply_subject}</p>
+                  )}
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Last outreach: {lead.last_outreach_at ? new Date(lead.last_outreach_at).toLocaleString() : 'not yet set'}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
