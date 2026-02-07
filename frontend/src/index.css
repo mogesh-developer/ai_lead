@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-gray-50 text-gray-900;
+}
+
+/* Design tokens */
+:root{
+  --brand-blue: #0ea5e9; /* sky-500 fallback */
+  --bg: #f8fafc; /* gray-50 */
+  --muted: #6b7280; /* gray-500 */
+  --radius: 10px;
+}
+
+/* Professional Scrollbar Styling (cross-browser, visible, hover-friendly) */
+.scrollbar-thin {
+  /* Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: #6b7280 #374151; /* thumb, track */
+  scrollbar-gutter: stable both-edges;
+  -webkit-overflow-scrolling: touch;
+  transition: scrollbar-color 0.15s ease;
+}
+
+/* Webkit (Chrome, Edge, Safari) */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: #111827; /* slightly darker than sidebar */
+  border-radius: 6px;
+  margin: 8px 0; /* keep track away from top/bottom */
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #6b7280, #4b5563);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+  transition: background-color 0.18s ease, width 0.15s ease;
+}
+
+/* Hover: make the thumb more visible and slightly wider */
+.scrollbar-thin:hover::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #9ca3af, #6b7280);
+}
+
+/* Corner background */
+.scrollbar-thin::-webkit-scrollbar-corner {
+  background: #111827;
+}
+
+/* Accessibility: respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .scrollbar-thin,
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    transition: none !important;
+  }
+}
